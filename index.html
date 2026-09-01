@@ -1,0 +1,2210 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stateless CMS</title>
+<meta name="robots" content="noindex, nofollow">
+<!--
+  ════════════════════════════════════════════════════════════════════════════
+  VAN DER BURG COACHING — STATELESS ZERO-INSTALL CMS
+  ════════════════════════════════════════════════════════════════════════════
+  Eén bestand. Geen build tools. Geen backend. Vanilla HTML/CSS/JS (ES6+).
+  Draait direct in de browser (file:// of lokale container) als API-client.
+
+  ARCHITECTUUR — "Twee Repositories":
+    • Repo 1 (privé) : dit CMS (cms.html) — de tooling.
+    • Repo 2 (publiek): de statische website + content (Markdown/JSON/HTML).
+
+  Alles wordt lokaal in localStorage bewaard. GitHub REST API voor lezen/
+  schrijven. Google Gemini API voor de AI Co-pilot. marked.js (CDN, met
+  ingebouwde fallback) voor de live preview.
+
+  Ontworpen om over 10 jaar nog te werken: geen framework, geen package
+  manager, alleen web-standaarden en één optionele CDN met fallback.
+  ════════════════════════════════════════════════════════════════════════════
+-->
+
+<!-- marked.js voor markdown-preview (CDN). Bij falen: ingebouwde mini-renderer. -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   DESIGN TOKENS — geëxtraheerd uit het Van der Burg design system
+   (colors_and_type.css). Merk: pink → purple → teal.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --gradient-brand:      linear-gradient(135deg, #f7588e 0%, #7b5ea7 45%, #4ab9d8 100%);
+  --gradient-brand-soft: linear-gradient(135deg, rgba(247,88,142,0.10) 0%, rgba(123,94,167,0.10) 45%, rgba(74,185,216,0.10) 100%);
+
+  --purple-50:#f3f1f9; --purple-100:#e3ddf2; --purple-200:#c7bbe5; --purple-300:#a494d4;
+  --purple-400:#7d6abf; --purple-500:#3E2E6D; --purple-600:#342560; --purple-700:#291c50;
+  --purple-800:#1d1339; --purple-900:#110b22;
+
+  --pink-100:#fcd9e8; --pink-300:#f780b4; --pink-400:#f7588e; --pink-500:#e8407a; --pink-600:#c42e62;
+  --teal-100:#d0f0f7; --teal-300:#7ecbd7; --teal-400:#4ab9d8; --teal-500:#2ea3c5; --teal-700:#136882;
+
+  --n-0:#ffffff; --n-50:#f8f8f8; --n-100:#f0f0f0; --n-200:#e0e0e0; --n-300:#c8c8c8;
+  --n-400:#a8a8a8; --n-500:#7a7a7a; --n-600:#5e5e5e; --n-700:#444444; --n-800:#2a2a2a; --n-900:#111111;
+
+  --cta:#f7588e; --cta-hover:#e8407a;
+  --success:#22c55e; --warning:#f59e0b; --error:#ef4444;
+
+  --font-display:'Roboto Slab', Georgia, serif;
+  --font-body:'Roboto','Helvetica Neue', Arial, sans-serif;
+  --font-mono:'SFMono-Regular', ui-monospace, 'Menlo', 'Courier New', monospace;
+
+  --radius-sm:4px; --radius-md:8px; --radius-lg:12px; --radius-xl:20px; --radius-full:9999px;
+  --shadow-sm:0 2px 8px rgba(17,24,39,0.08);
+  --shadow-md:0 4px 20px rgba(17,24,39,0.10);
+  --shadow-lg:0 8px 40px rgba(17,24,39,0.14);
+  --shadow-xl:0 16px 60px rgba(17,24,39,0.18);
+  --t-fast:0.15s ease; --t-base:0.25s ease;
+
+  --header-h:60px;
+  --sidebar-w:280px;
+  --copilot-w:360px;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Roboto+Slab:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+
+html, body { height:100%; }
+body {
+  font-family:var(--font-body);
+  font-size:14px;
+  line-height:1.5;
+  color:var(--n-700);
+  background:var(--n-50);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+
+h1,h2,h3,h4 { font-family:var(--font-display); color:var(--purple-500); font-weight:600; line-height:1.25; }
+
+button { font-family:inherit; cursor:pointer; border:none; background:none; }
+input, textarea, select { font-family:inherit; font-size:14px; color:var(--n-800); }
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-thumb { background:var(--n-300); border-radius:var(--radius-full); border:2px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover { background:var(--n-400); background-clip:content-box; }
+
+/* ── Utility button styles ─────────────────────────────────────────────── */
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  font-size:13px; font-weight:500; padding:8px 14px; border-radius:var(--radius-full);
+  transition:all var(--t-base); white-space:nowrap; line-height:1;
+}
+.btn:disabled { opacity:0.45; cursor:not-allowed; }
+.btn-primary { background:var(--purple-500); color:#fff; box-shadow:0 4px 16px rgba(62,46,109,0.20); }
+.btn-primary:not(:disabled):hover { background:var(--purple-600); box-shadow:0 6px 24px rgba(62,46,109,0.32); transform:translateY(-1px); }
+.btn-cta { background:var(--cta); color:#fff; box-shadow:0 4px 16px rgba(247,88,142,0.28); }
+.btn-cta:not(:disabled):hover { background:var(--cta-hover); transform:translateY(-1px); }
+.btn-ghost { background:transparent; color:var(--n-600); border:1px solid var(--n-200); }
+.btn-ghost:not(:disabled):hover { background:var(--n-50); color:var(--purple-500); border-color:var(--n-300); }
+.btn-teal { background:var(--teal-400); color:#fff; }
+.btn-teal:not(:disabled):hover { background:var(--teal-500); }
+.btn-sm { padding:6px 10px; font-size:12px; }
+.btn-icon { padding:7px; border-radius:var(--radius-md); color:var(--n-500); }
+.btn-icon:hover { background:var(--n-100); color:var(--purple-500); }
+
+/* ── App shell ─────────────────────────────────────────────────────────── */
+#app { display:flex; flex-direction:column; height:100vh; }
+
+/* Top bar */
+.topbar {
+  height:var(--header-h); flex-shrink:0;
+  display:flex; align-items:center; gap:16px;
+  padding:0 18px;
+  background:rgba(255,255,255,0.97);
+  border-bottom:1px solid var(--n-100);
+  box-shadow:0 2px 16px rgba(62,46,109,0.05);
+  z-index:50;
+}
+.brand { display:flex; align-items:center; gap:11px; flex-shrink:0; }
+.brand-mark {
+  width:34px; height:34px; border-radius:9px; flex-shrink:0;
+  background:var(--gradient-brand);
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-family:var(--font-display); font-weight:700; font-size:17px;
+  box-shadow:0 3px 10px rgba(247,88,142,0.30);
+}
+.brand-text { display:flex; flex-direction:column; line-height:1.1; }
+.brand-title { font-family:var(--font-display); font-weight:600; font-size:15px; color:var(--purple-500); }
+.brand-sub { font-size:10px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--n-400); }
+
+.repo-pill {
+  display:flex; align-items:center; gap:7px;
+  padding:6px 12px; background:var(--n-50); border:1px solid var(--n-200);
+  border-radius:var(--radius-full); font-size:12px; color:var(--n-600); max-width:340px;
+}
+.repo-pill .dot { width:8px; height:8px; border-radius:50%; background:var(--n-300); flex-shrink:0; }
+.repo-pill.connected .dot { background:var(--success); box-shadow:0 0 0 3px rgba(34,197,94,0.18); }
+.repo-pill code { font-family:var(--font-mono); font-size:11.5px; color:var(--purple-500); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.topbar-spacer { flex:1; }
+.topbar-actions { display:flex; align-items:center; gap:8px; }
+
+/* Main 3-column layout */
+.workspace { flex:1; display:flex; min-height:0; }
+
+/* Sidebar — file navigatie */
+.sidebar {
+  width:var(--sidebar-w); flex-shrink:0;
+  background:#fff; border-right:1px solid var(--n-100);
+  display:flex; flex-direction:column; min-height:0;
+}
+.sidebar-head {
+  padding:14px 16px 10px; display:flex; align-items:center; justify-content:space-between;
+  border-bottom:1px solid var(--n-100);
+}
+.sidebar-head h3 { font-size:12px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:var(--n-500); font-family:var(--font-body); }
+.sidebar-tools { display:flex; gap:2px; }
+.filter-box { padding:10px 14px; border-bottom:1px solid var(--n-100); }
+.filter-box input {
+  width:100%; padding:7px 10px; border:1px solid var(--n-200); border-radius:var(--radius-md);
+  background:var(--n-50); font-size:12.5px; outline:none; transition:border var(--t-fast);
+}
+.filter-box input:focus { border-color:var(--cta); background:#fff; }
+.file-tree { flex:1; overflow-y:auto; padding:8px 6px 20px; }
+.tree-empty { padding:40px 20px; text-align:center; color:var(--n-400); font-size:12.5px; line-height:1.7; }
+
+.tree-item {
+  display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:var(--radius-md);
+  font-size:13px; color:var(--n-700); cursor:pointer; user-select:none;
+  transition:background var(--t-fast); position:relative;
+}
+.tree-item:hover { background:var(--n-50); }
+.tree-item.active { background:var(--purple-50); color:var(--purple-500); font-weight:500; }
+.tree-item.active::before { content:''; position:absolute; left:0; top:4px; bottom:4px; width:3px; border-radius:2px; background:var(--gradient-brand); }
+.tree-item .ico { width:16px; text-align:center; flex-shrink:0; opacity:0.85; font-size:12px; }
+.tree-item .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.tree-item .caret { width:12px; font-size:9px; color:var(--n-400); transition:transform var(--t-fast); }
+.tree-item.dir { font-weight:500; color:var(--n-800); }
+.tree-children { overflow:hidden; }
+
+/* Editor column */
+.editor-col { flex:1; display:flex; flex-direction:column; min-width:0; background:var(--n-50); }
+.editor-bar {
+  display:flex; align-items:center; gap:12px; padding:9px 16px;
+  background:#fff; border-bottom:1px solid var(--n-100); flex-shrink:0; min-height:52px;
+}
+.file-info { flex:1; min-width:0; }
+.file-path { font-family:var(--font-mono); font-size:12.5px; color:var(--purple-500); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.file-meta { font-size:11px; color:var(--n-400); margin-top:1px; }
+.dirty-dot { color:var(--cta); font-weight:700; }
+
+.view-tabs { display:flex; gap:2px; background:var(--n-100); padding:3px; border-radius:var(--radius-md); }
+.view-tab { padding:5px 12px; font-size:12px; font-weight:500; color:var(--n-500); border-radius:6px; transition:all var(--t-fast); }
+.view-tab.active { background:#fff; color:var(--purple-500); box-shadow:var(--shadow-sm); }
+
+.editor-body { flex:1; display:flex; min-height:0; position:relative; }
+.pane { flex:1; min-width:0; display:flex; flex-direction:column; }
+.pane.hidden { display:none; }
+.pane-split { border-right:1px solid var(--n-200); }
+
+.editor-textarea {
+  flex:1; width:100%; resize:none; border:none; outline:none; padding:24px 28px;
+  font-family:var(--font-mono); font-size:14px; line-height:1.7; color:var(--n-800);
+  background:#fff; tab-size:2;
+}
+.frontmatter-note {
+  font-size:11px; color:var(--teal-700); background:var(--teal-100);
+  padding:5px 12px; border-bottom:1px solid var(--teal-300);
+}
+
+/* Preview */
+.preview {
+  flex:1; min-height:0; overflow-y:auto; padding:32px 40px; background:#fff;
+  color:var(--n-600); line-height:1.7;
+}
+/* Full-bleed modus voor de HTML-iframe: geen padding, iframe vult de pane */
+.preview.frame-mode { padding:0; overflow:hidden; display:flex; }
+.preview.md h1,.preview.md h2,.preview.md h3,.preview.md h4 { color:var(--purple-500); margin:1.4em 0 0.5em; }
+.preview.md h1 { font-size:2rem; } .preview.md h2 { font-size:1.5rem; } .preview.md h3 { font-size:1.2rem; }
+.preview.md p { margin:0 0 1em; }
+.preview.md a { color:var(--cta); }
+.preview.md ul,.preview.md ol { margin:0 0 1em 1.4em; }
+.preview.md li { margin:0.3em 0; }
+.preview.md img { max-width:100%; border-radius:var(--radius-lg); box-shadow:var(--shadow-md); margin:0.6em 0; }
+.preview.md blockquote { border-left:3px solid var(--teal-400); padding:2px 0 2px 16px; margin:0 0 1em; color:var(--n-500); font-style:italic; }
+.preview.md code { font-family:var(--font-mono); font-size:0.88em; background:var(--purple-50); color:var(--purple-600); padding:2px 6px; border-radius:4px; }
+.preview.md pre { background:var(--purple-900); color:#e3ddf2; padding:16px; border-radius:var(--radius-md); overflow-x:auto; margin:0 0 1em; }
+.preview.md pre code { background:none; color:inherit; padding:0; }
+.preview.md hr { border:none; border-top:1px solid var(--n-200); margin:1.6em 0; }
+.preview.md table { border-collapse:collapse; margin:0 0 1em; width:100%; }
+.preview.md th,.preview.md td { border:1px solid var(--n-200); padding:7px 12px; text-align:left; }
+.preview.md th { background:var(--purple-50); color:var(--purple-500); }
+.preview-html-frame { flex:1 1 auto; width:100%; height:100%; border:none; background:#fff; display:block; }
+
+.editor-placeholder {
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px; color:var(--n-400); text-align:center; padding:40px;
+}
+.editor-placeholder .big { font-size:44px; opacity:0.4; }
+.editor-placeholder h2 { color:var(--n-500); font-size:20px; }
+.editor-placeholder p { max-width:360px; font-size:13px; line-height:1.7; }
+
+/* Drop overlay */
+.drop-overlay {
+  position:absolute; inset:0; z-index:40; display:none;
+  align-items:center; justify-content:center; flex-direction:column; gap:12px;
+  background:var(--gradient-brand-soft); backdrop-filter:blur(3px);
+  border:3px dashed var(--cta); border-radius:8px; margin:8px;
+  color:var(--purple-500); font-weight:600; font-size:16px; pointer-events:none;
+}
+.editor-body.dragover .drop-overlay { display:flex; }
+
+/* Co-pilot panel */
+.copilot {
+  width:var(--copilot-w); flex-shrink:0; background:#fff; border-left:1px solid var(--n-100);
+  display:flex; flex-direction:column; min-height:0;
+}
+.copilot-head {
+  padding:16px 18px 14px; border-bottom:1px solid var(--n-100);
+  background:linear-gradient(180deg, var(--purple-50), #fff);
+}
+.copilot-head .title { display:flex; align-items:center; gap:9px; }
+.copilot-head .spark {
+  width:26px; height:26px; border-radius:8px; background:var(--gradient-brand);
+  display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0;
+  box-shadow:0 2px 8px rgba(247,88,142,0.3);
+}
+.copilot-head h3 { font-family:var(--font-display); font-size:15px; color:var(--purple-500); }
+.copilot-head p { font-size:11.5px; color:var(--n-500); margin-top:6px; line-height:1.5; }
+
+.copilot-body { flex:1; overflow-y:auto; padding:16px 18px; }
+.copilot-actions { padding:14px 18px; border-top:1px solid var(--n-100); display:flex; flex-direction:column; gap:8px; }
+
+.ai-empty { text-align:center; padding:30px 10px; color:var(--n-400); font-size:12.5px; line-height:1.7; }
+.ai-empty .ico { font-size:34px; opacity:0.35; display:block; margin-bottom:10px; }
+
+.ai-section { margin-bottom:16px; }
+.ai-section-label {
+  font-size:10.5px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
+  color:var(--n-500); margin-bottom:7px; display:flex; align-items:center; gap:6px;
+}
+.ai-section-label .badge { font-size:9px; padding:2px 6px; border-radius:var(--radius-full); background:var(--teal-100); color:var(--teal-700); letter-spacing:0.04em; }
+.ai-suggestion {
+  background:var(--purple-50); border:1px solid var(--purple-100); border-radius:var(--radius-md);
+  padding:12px 14px; font-size:13px; line-height:1.65; color:var(--n-700);
+  max-height:340px; overflow-y:auto; white-space:pre-wrap; word-break:break-word;
+}
+.ai-reasoning {
+  background:var(--n-50); border-radius:var(--radius-md); padding:11px 13px;
+  font-size:12.5px; line-height:1.6; color:var(--n-600);
+}
+.ai-list { list-style:none; display:flex; flex-direction:column; gap:8px; }
+.ai-list li {
+  display:flex; gap:9px; font-size:12.5px; line-height:1.55; color:var(--n-600);
+  background:var(--teal-100); border-radius:var(--radius-md); padding:10px 12px;
+}
+.ai-list li .n {
+  flex-shrink:0; width:18px; height:18px; border-radius:50%; background:var(--teal-400); color:#fff;
+  font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;
+}
+
+/* Spinner */
+.spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.4); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; }
+.spinner.dark { border-color:var(--purple-200); border-top-color:var(--purple-500); }
+@keyframes spin { to { transform:rotate(360deg); } }
+.loading-block { display:flex; flex-direction:column; align-items:center; gap:12px; padding:36px 10px; color:var(--n-500); font-size:12.5px; }
+
+/* Klik-bewerken: actieve toggle + selectiechip + md-preview highlight */
+.btn-ghost.active { background:var(--purple-50); color:var(--purple-500); border-color:var(--cta); }
+.ai-selection {
+  background:var(--pink-100); border:1px solid var(--pink-300); border-radius:var(--radius-md);
+  padding:8px 10px; font-size:12px; color:var(--purple-600); line-height:1.5; position:relative;
+}
+.ai-selection .sel-label { font-weight:700; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--cta); display:block; margin-bottom:3px; }
+.ai-selection .sel-text { display:block; max-height:56px; overflow:hidden; }
+.ai-selection .sel-clear { position:absolute; top:6px; right:8px; color:var(--pink-600); font-size:13px; cursor:pointer; }
+.ai-selection .sel-edit {
+  width:100%; margin-top:6px; padding:7px 9px; border:1px solid var(--pink-300); border-radius:6px;
+  background:#fff; font-family:var(--font-body); font-size:12.5px; line-height:1.5; color:var(--n-800);
+  resize:vertical; outline:none; min-height:54px;
+}
+.ai-selection .sel-edit:focus { border-color:var(--cta); box-shadow:0 0 0 3px rgba(247,88,142,0.12); }
+.ai-selection .sel-warn { font-size:10.5px; color:var(--warning); margin-top:6px; line-height:1.45; }
+.preview.editable :is(h1,h2,h3,h4,h5,h6,p,li,blockquote,a,span,strong,em){ cursor:pointer; border-radius:3px; transition:background .12s, box-shadow .12s; }
+.preview.editable :is(h1,h2,h3,h4,h5,h6,p,li,blockquote,a):hover{ box-shadow:0 0 0 2px var(--cta); background:rgba(247,88,142,.08); }
+.editmode-hint { font-size:11px; color:var(--teal-700); background:var(--teal-100); padding:5px 12px; border-bottom:1px solid var(--teal-300); }
+
+/* ── Modal ─────────────────────────────────────────────────────────────── */
+.modal-backdrop {
+  position:fixed; inset:0; z-index:200; background:rgba(29,19,57,0.45); backdrop-filter:blur(4px);
+  display:none; align-items:center; justify-content:center; padding:24px;
+}
+.modal-backdrop.open { display:flex; }
+.modal {
+  background:#fff; border-radius:var(--radius-xl); box-shadow:var(--shadow-xl);
+  width:100%; max-width:600px; max-height:90vh; display:flex; flex-direction:column; overflow:hidden;
+  animation:modalIn 0.25s ease;
+}
+@keyframes modalIn { from { opacity:0; transform:translateY(12px) scale(0.98); } to { opacity:1; transform:none; } }
+.modal-head { padding:20px 24px 16px; border-bottom:1px solid var(--n-100); display:flex; align-items:center; justify-content:space-between; }
+.modal-head h2 { font-size:19px; }
+.modal-tabs { display:flex; gap:4px; padding:0 24px; border-bottom:1px solid var(--n-100); }
+.modal-tab { padding:12px 4px; margin-right:18px; font-size:13px; font-weight:500; color:var(--n-500); border-bottom:2px solid transparent; transition:all var(--t-fast); }
+.modal-tab.active { color:var(--purple-500); border-bottom-color:var(--cta); }
+.modal-body { padding:22px 24px; overflow-y:auto; }
+.modal-pane { display:none; }
+.modal-pane.active { display:block; }
+.modal-foot { padding:16px 24px; border-top:1px solid var(--n-100); display:flex; justify-content:space-between; align-items:center; gap:12px; }
+
+.field { margin-bottom:16px; }
+.field label { display:block; font-size:12.5px; font-weight:600; color:var(--purple-500); margin-bottom:5px; }
+.field .hint { font-size:11.5px; color:var(--n-500); margin-top:5px; line-height:1.5; }
+.field .hint a { color:var(--teal-500); }
+.field input, .field textarea, .field select {
+  width:100%; padding:9px 12px; border:1px solid var(--n-200); border-radius:var(--radius-md);
+  background:var(--n-50); outline:none; transition:border var(--t-fast), background var(--t-fast);
+}
+.field input:focus, .field textarea:focus, .field select:focus { border-color:var(--cta); background:#fff; box-shadow:0 0 0 3px rgba(247,88,142,0.12); }
+.field textarea { resize:vertical; min-height:90px; font-size:13px; line-height:1.6; }
+.field-row { display:flex; gap:12px; }
+.field-row .field { flex:1; }
+.pw-field { position:relative; }
+.pw-field input { padding-right:60px; }
+.pw-toggle { position:absolute; right:8px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--teal-500); padding:4px 8px; }
+
+.status-line { font-size:12px; display:flex; align-items:center; gap:7px; }
+.status-line.ok { color:var(--success); }
+.status-line.err { color:var(--error); }
+.status-line.busy { color:var(--n-500); }
+
+/* Toasts */
+.toast-wrap { position:fixed; bottom:20px; right:20px; z-index:300; display:flex; flex-direction:column; gap:10px; }
+.toast {
+  display:flex; align-items:flex-start; gap:10px; min-width:280px; max-width:400px;
+  background:#fff; border-radius:var(--radius-md); box-shadow:var(--shadow-lg);
+  padding:13px 15px; border-left:4px solid var(--n-300); font-size:13px; color:var(--n-700);
+  animation:toastIn 0.3s ease; line-height:1.5;
+}
+@keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+.toast.success { border-left-color:var(--success); }
+.toast.error { border-left-color:var(--error); }
+.toast.info { border-left-color:var(--teal-400); }
+.toast .t-ico { font-size:16px; flex-shrink:0; }
+.toast .t-close { margin-left:auto; color:var(--n-400); font-size:16px; line-height:1; padding:0 2px; flex-shrink:0; }
+
+/* Image manager */
+.images-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+.img-card { border:1px solid var(--n-100); border-radius:var(--radius-lg); overflow:hidden; background:var(--n-50); display:flex; flex-direction:column; }
+.img-thumb-wrap { position:relative; aspect-ratio:16/10; background:repeating-conic-gradient(var(--n-100) 0% 25%, #fff 0% 50%) 50%/16px 16px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.img-thumb { max-width:100%; max-height:100%; object-fit:contain; display:block; }
+.img-badge { position:absolute; top:6px; right:6px; font-size:10px; font-weight:700; letter-spacing:.04em; padding:2px 7px; border-radius:var(--radius-full); }
+.img-badge.ok { background:rgba(34,197,94,.15); color:#15803d; }
+.img-badge.warn { background:rgba(245,158,11,.18); color:#b45309; }
+.img-info { padding:9px 11px; display:flex; flex-direction:column; gap:2px; flex:1; }
+.img-path { font-family:var(--font-mono); font-size:11px; color:var(--purple-500); word-break:break-all; }
+.img-meta { font-size:11px; color:var(--n-500); }
+.img-actions { display:flex; gap:6px; padding:0 11px 11px; }
+.img-actions .btn { flex:1; }
+.img-busy { font-size:11px; color:var(--teal-700); padding:0 11px 11px; display:flex; align-items:center; gap:6px; }
+
+/* Setup banner (when not configured) */
+.setup-banner {
+  margin:auto; max-width:440px; text-align:center; padding:40px; color:var(--n-500);
+}
+.setup-banner .icon { font-size:52px; margin-bottom:16px; }
+.setup-banner h2 { font-size:22px; margin-bottom:10px; }
+.setup-banner p { font-size:13.5px; line-height:1.7; margin-bottom:22px; }
+
+kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); border:1px solid var(--n-200); border-radius:4px; padding:1px 5px; }
+
+@media (max-width:1100px) {
+  :root { --copilot-w:300px; --sidebar-w:230px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ─── TOP BAR ─────────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" id="brandMark">◆</div>
+      <div class="brand-text">
+        <span class="brand-title" id="brandTitle">Stateless CMS</span>
+        <span class="brand-sub">CMS</span>
+      </div>
+    </div>
+
+    <div class="repo-pill" id="repoPill" title="Verbindingsstatus">
+      <span class="dot"></span>
+      <code id="repoLabel">niet verbonden</code>
+    </div>
+
+    <div class="topbar-spacer"></div>
+
+    <div class="topbar-actions">
+      <button class="btn-icon" id="btnRefresh" title="Bestandsboom vernieuwen">⟳</button>
+      <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
+      <button class="btn btn-ghost" id="btnSettings">⚙ Instellingen</button>
+      <button class="btn btn-cta" id="btnPublish" disabled>↑ Opslaan &amp; Publiceer</button>
+    </div>
+  </header>
+
+  <!-- ─── WORKSPACE ───────────────────────────────────────────────────── -->
+  <div class="workspace">
+
+    <!-- SIDEBAR: file navigatie -->
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <h3>Bestanden</h3>
+        <div class="sidebar-tools">
+          <button class="btn-icon" id="btnNewFile" title="Nieuw bestand">＋</button>
+          <button class="btn-icon" id="btnReloadTree" title="Vernieuwen">⟳</button>
+        </div>
+      </div>
+      <div class="filter-box">
+        <input type="text" id="fileFilter" placeholder="Filter bestanden…" autocomplete="off">
+      </div>
+      <div class="file-tree" id="fileTree">
+        <div class="tree-empty">Verbind eerst met je GitHub-repository via&nbsp;<b>⚙ Instellingen</b>.</div>
+      </div>
+    </aside>
+
+    <!-- EDITOR -->
+    <section class="editor-col">
+      <div class="editor-bar" id="editorBar" style="display:none;">
+        <div class="file-info">
+          <div class="file-path" id="curPath">—</div>
+          <div class="file-meta" id="curMeta"></div>
+        </div>
+        <div class="view-tabs" id="viewTabs">
+          <button class="view-tab active" data-view="edit">✎ Editor</button>
+          <button class="view-tab" data-view="split">◫ Split</button>
+          <button class="view-tab" data-view="preview">◉ Preview</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btnEditMode" title="Klik teksten in de preview aan om ze te bewerken">✎ Klik-bewerken</button>
+        <button class="btn btn-ghost btn-sm" id="btnImage" title="Afbeelding toevoegen (of sleep hierheen)">🖼 Afbeelding</button>
+      </div>
+
+      <div class="editor-body" id="editorBody">
+        <div class="editor-placeholder" id="editorPlaceholder">
+          <div class="big">✎</div>
+          <h2>Geen bestand geopend</h2>
+          <p>Kies een bestand uit de zijbalk om te bewerken, of maak een nieuw bestand aan met <b>＋</b>. Sleep afbeeldingen hierheen om ze te optimaliseren en te uploaden.</p>
+        </div>
+
+        <div class="pane pane-split hidden" id="editPane">
+          <div class="frontmatter-note" id="fmNote" style="display:none;"></div>
+          <textarea class="editor-textarea" id="editor" spellcheck="false" placeholder="Begin met typen…"></textarea>
+        </div>
+        <div class="pane hidden" id="previewPane">
+          <div class="preview md" id="preview"></div>
+        </div>
+
+        <div class="drop-overlay">
+          <div style="font-size:38px;">🖼</div>
+          <div>Laat los om te optimaliseren &amp; uploaden naar /images/</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CO-PILOT -->
+    <aside class="copilot">
+      <div class="copilot-head">
+        <div class="title">
+          <div class="spark">✦</div>
+          <h3>AI Co-pilot</h3>
+        </div>
+        <p>Laat Gemini je content verbeteren voor leesbaarheid, SEO en AI-vindbaarheid (AI-EO).</p>
+      </div>
+      <div class="copilot-body" id="copilotBody">
+        <div class="ai-empty">
+          <span class="ico">✦</span>
+          Open een bestand en klik op <b>Vraag AI Advies</b> om suggesties te ontvangen.
+        </div>
+      </div>
+      <div class="copilot-actions">
+        <div id="aiSelection" class="ai-selection" style="display:none;"></div>
+        <button class="btn btn-primary" id="btnAskAI" disabled style="width:100%;">✦ Vraag AI Advies</button>
+        <button class="btn btn-teal" id="btnApplyAI" disabled style="width:100%; display:none;">✓ Pas suggestie toe</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ─── SETTINGS MODAL ────────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Instellingen</h2>
+      <button class="btn-icon" id="btnCloseSettings" style="font-size:18px;">✕</button>
+    </div>
+    <div class="modal-tabs">
+      <button class="modal-tab active" data-tab="github">Verbinding</button>
+      <button class="modal-tab" data-tab="ai">AI Co-pilot</button>
+      <button class="modal-tab" data-tab="site">Site &amp; SEO</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- GitHub tab -->
+      <div class="modal-pane active" data-pane="github">
+        <div class="field">
+          <label>GitHub Personal Access Token (PAT)</label>
+          <div class="pw-field">
+            <input type="password" id="cfgPat" placeholder="ghp_… of github_pat_…" autocomplete="off">
+            <button class="pw-toggle" data-target="cfgPat">tonen</button>
+          </div>
+          <div class="hint">Fine-grained token met <b>Contents: Read &amp; Write</b> op de doel-repo. Wordt alleen lokaal in je browser opgeslagen (localStorage). <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">Token aanmaken →</a></div>
+        </div>
+        <div class="field-row">
+          <div class="field" style="flex:2;">
+            <label>Repository (owner/repo)</label>
+            <input type="text" id="cfgRepo" placeholder="deborah/vanderburg-website" autocomplete="off">
+          </div>
+          <div class="field" style="flex:1;">
+            <label>Branch</label>
+            <input type="text" id="cfgBranch" placeholder="main" autocomplete="off">
+          </div>
+        </div>
+        <div class="field">
+          <label>Images-map</label>
+          <input type="text" id="cfgImgDir" placeholder="images" autocomplete="off">
+          <div class="hint">Map waarin geoptimaliseerde afbeeldingen worden geüpload (standaard: <code>images</code>).</div>
+        </div>
+        <div class="status-line" id="ghStatus"></div>
+      </div>
+
+      <!-- AI tab -->
+      <div class="modal-pane" data-pane="ai">
+        <div class="field">
+          <label>Google Gemini API-sleutel</label>
+          <div class="pw-field">
+            <input type="password" id="cfgGemini" placeholder="AIza…" autocomplete="off">
+            <button class="pw-toggle" data-target="cfgGemini">tonen</button>
+          </div>
+          <div class="hint">Lokaal opgeslagen. <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Sleutel aanmaken in Google AI Studio →</a></div>
+        </div>
+        <div class="field">
+          <label>Model</label>
+          <select id="cfgModel">
+            <option value="gemini-flash-latest">gemini-flash-latest (aanbevolen — altijd actueel)</option>
+            <option value="gemini-pro-latest">gemini-pro-latest (grondiger)</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash (sneller/goedkoper)</option>
+            <option value="gemini-3-flash-preview">gemini-3-flash-preview (nieuwste, preview)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>System Instruction (jouw stijl &amp; richtlijnen)</label>
+          <textarea id="cfgSysPrompt" placeholder="Bv: Je bent een SEO-copywriter voor een coachingspraktijk. Schrijf warm, empathisch en professioneel in het Nederlands. Focus op relatietherapie en persoonlijke coaching…"></textarea>
+          <div class="hint">Deze instructie wordt bij élk AI-verzoek meegegeven. Bepaalt toon, taal en focus van de suggesties.</div>
+        </div>
+        <div class="status-line" id="aiStatus"></div>
+      </div>
+
+      <!-- Site tab -->
+      <div class="modal-pane" data-pane="site">
+        <div class="field">
+          <label>Google Analytics 4 — Meet-ID</label>
+          <input type="text" id="cfgGa4" placeholder="G-XXXXXXXXXX" autocomplete="off">
+          <div class="hint">Wordt bij publicatie van <b>HTML-bestanden</b> automatisch in de <code>&lt;head&gt;</code> geïnjecteerd (idempotent, via markers).</div>
+        </div>
+        <div class="field">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" id="cfgAutoJsonld" style="width:auto;" checked>
+            Automatisch JSON-LD (Schema.org) genereren bij publiceren
+          </label>
+          <div class="hint">Bij elke publicatie genereert Gemini op de achtergrond een Schema.org-object op basis van de content en injecteert dit in de <code>&lt;head&gt;</code> (HTML) of in de frontmatter (Markdown). Vereist een Gemini-sleutel.</div>
+        </div>
+        <div class="field">
+          <label>Site-naam (voor JSON-LD context)</label>
+          <input type="text" id="cfgSiteName" placeholder="Van der Burg Coaching" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Site-URL (voor JSON-LD context)</label>
+          <input type="text" id="cfgSiteUrl" placeholder="https://vanderburgcoaching.com" autocomplete="off">
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="btnTestConn">Verbinding testen</button>
+      <button class="btn btn-primary" id="btnSaveSettings">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── NEW FILE MODAL ────────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="newFileModal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head">
+      <h2>Nieuw bestand</h2>
+      <button class="btn-icon" id="btnCloseNewFile" style="font-size:18px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Pad &amp; bestandsnaam</label>
+        <input type="text" id="newFilePath" placeholder="content/blog/mijn-artikel.md" autocomplete="off">
+        <div class="hint">Relatief pad vanaf de repo-root. Bv. <code>content/pagina.md</code> of <code>data/info.json</code>.</div>
+      </div>
+    </div>
+    <div class="modal-foot" style="justify-content:flex-end;">
+      <button class="btn btn-ghost" id="btnCancelNewFile">Annuleren</button>
+      <button class="btn btn-primary" id="btnCreateFile">Aanmaken</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PUBLISH MODAL ─────────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="publishModal">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-head">
+      <h2>Opslaan &amp; Publiceer</h2>
+      <button class="btn-icon" id="btnClosePublish" style="font-size:18px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Bestand</label>
+        <input type="text" id="pubPath" readonly style="font-family:var(--font-mono); font-size:12.5px;">
+      </div>
+      <div class="field">
+        <label>Commit-bericht</label>
+        <input type="text" id="pubMessage" placeholder="Content bijgewerkt via CMS" autocomplete="off">
+      </div>
+      <div id="pubOptions" style="background:var(--n-50); border-radius:var(--radius-md); padding:14px; font-size:12.5px; color:var(--n-600); line-height:1.7;"></div>
+      <div class="status-line busy" id="pubStatus" style="margin-top:14px; display:none;"></div>
+    </div>
+    <div class="modal-foot" style="justify-content:flex-end;">
+      <button class="btn btn-ghost" id="btnCancelPublish">Annuleren</button>
+      <button class="btn btn-cta" id="btnConfirmPublish">↑ Publiceer nu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── IMAGE MANAGER MODAL ───────────────────────────────────────────── -->
+<div class="modal-backdrop" id="imagesModal">
+  <div class="modal" style="max-width:860px;">
+    <div class="modal-head">
+      <h2>Afbeeldingen beheren</h2>
+      <button class="btn-icon" id="btnCloseImages" style="font-size:18px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12.5px;color:var(--n-500);margin-bottom:16px;line-height:1.6;">
+        Vervang een afbeelding zonder de bestandsnaam te wijzigen — alle pagina's die ernaar verwijzen worden meteen bijgewerkt.
+        De CMS controleert de afmetingen en bestandsgrootte en optimaliseert automatisch (max <b>1600px</b> breed, streef <b>≤300&nbsp;KB</b>, WebP/JPEG/PNG naar gelang het bestand).
+      </p>
+      <div id="imagesGrid" class="images-grid"></div>
+    </div>
+    <div class="modal-foot" style="justify-content:flex-end;">
+      <button class="btn btn-ghost" id="btnCloseImages2">Sluiten</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   VAN DER BURG COACHING CMS — applicatielogica
+   Geen frameworks. Alles vanilla ES6+.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 0. Kleine helpers ──────────────────────────────────────────────────── */
+const $  = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
+const el = (tag, props={}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k,v] of Object.entries(props)) {
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined) n.setAttribute(k, v);
+  }
+  for (const kid of kids) { if (kid != null) n.append(kid.nodeType ? kid : document.createTextNode(kid)); }
+  return n;
+};
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* UTF-8 veilige Base64 (essentieel voor accenten / emoji in content) */
+function encodeBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+function decodeBase64(b64) {
+  const bin = atob((b64 || '').replace(/\s/g, ''));
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return new TextDecoder('utf-8').decode(bytes);
+}
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+/* ── 1. Config ──────────────────────────────────────────────────────────────
+   Generieke CMS-engine. Twee lagen:
+   • GLOBALE secrets (PAT, Gemini-sleutel) → localStorage, gedeeld over al je sites.
+   • PER-SITE instellingen → uit de doel-repo (cms.config.json) + ?repo= in de URL.
+   Zo draait dezelfde CMS voor elke site; secrets komen NOOIT in een repo terecht. */
+const CFG_KEY = 'scms_config_v1';
+const OLD_CFG_KEY = 'vdb_cms_config_v1';   // migratie van de oude, site-specifieke opslag
+const defaultConfig = {
+  pat:'', repo:'', branch:'main', imgDir:'images',
+  gemini:'', model:'gemini-flash-latest', sysPrompt:'',
+  ga4:'', autoJsonld:true, siteName:'', siteUrl:''
+};
+// Velden die een site's cms.config.json mag zetten (secrets zoals pat/gemini NOOIT)
+const SITE_CFG_KEYS = ['branch','imgDir','model','sysPrompt','ga4','autoJsonld','siteName','siteUrl'];
+const cleanRepo = s => (s||'').replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/\/+$/,'');
+let config = loadConfig();
+function loadConfig() {
+  try {
+    const stored = localStorage.getItem(CFG_KEY) || localStorage.getItem(OLD_CFG_KEY) || '{}';
+    const c = Object.assign({}, defaultConfig, JSON.parse(stored));
+    // Verouderde/geblokkeerde modellen (1.5, 1.0, 2.5, kale gemini-pro) → migreren naar actueel
+    if (/gemini-(1\.|2\.5)|^gemini-pro$/i.test(c.model || '')) c.model = defaultConfig.model;
+    // ?repo=owner/naam&branch=main kiest de actieve site (start de CMS vanuit een site-repo)
+    const q = new URLSearchParams(location.search);
+    if (q.get('repo'))   c.repo = cleanRepo(q.get('repo'));
+    if (q.get('branch')) c.branch = q.get('branch');
+    return c;
+  } catch { return {...defaultConfig}; }
+}
+function saveConfig() { localStorage.setItem(CFG_KEY, JSON.stringify(config)); }
+function isConfigured() { return !!(config.pat && config.repo); }
+
+/* Haalt cms.config.json uit de doel-repo en past de site-instellingen toe.
+   Ontbreekt het bestand, dan valt de CMS gewoon terug op localStorage. */
+async function loadSiteConfig() {
+  if (!config.pat || !config.repo) return;
+  try {
+    const data = await GitHub.getFile('cms.config.json');
+    const json = JSON.parse(decodeBase64(data.content));
+    let changed = false;
+    for (const k of SITE_CFG_KEYS) {
+      if (json[k] !== undefined && json[k] !== config[k]) { config[k] = json[k]; changed = true; }
+    }
+    if (changed) saveConfig();
+  } catch (e) { /* geen/ongeldige cms.config.json → localStorage-instellingen blijven gelden */ }
+}
+
+/* ── 2. App state ───────────────────────────────────────────────────────── */
+const state = {
+  tree: [],           // flat list uit GitHub trees API
+  current: null,      // { path, sha, content, original, isBinary }
+  view: 'edit',
+  dirty: false,
+  aiSuggestion: null, // laatste AI suggested_text
+  loadingTree: false,
+  editMode: false,    // "klik-om-te-bewerken" in de preview
+  selection: null,    // { text } — geselecteerd fragment uit de preview
+};
+
+/* ── 3. Toast notificaties ──────────────────────────────────────────────── */
+function toast(msg, type='info', ms=4200) {
+  const icons = { success:'✓', error:'✕', info:'ℹ' };
+  const t = el('div', { class:`toast ${type}` },
+    el('span', { class:'t-ico' }, icons[type] || 'ℹ'),
+    el('span', { class:'msg', style:'flex:1;', html: escapeHtml(msg) }),
+    el('button', { class:'t-close', onclick: e => e.target.closest('.toast').remove() }, '✕')
+  );
+  $('#toastWrap').append(t);
+  if (ms) setTimeout(() => t.remove(), ms);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. GITHUB REST API CLIENT
+   ═══════════════════════════════════════════════════════════════════════════ */
+const GitHub = {
+  base: 'https://api.github.com',
+  headers() {
+    return {
+      'Authorization': `Bearer ${config.pat}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+  },
+  async req(path, opts={}) {
+    const res = await fetch(this.base + path, { ...opts, headers: { ...this.headers(), ...(opts.headers||{}) } });
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.json()).message || ''; } catch {}
+      throw new Error(`GitHub ${res.status}: ${detail || res.statusText}`);
+    }
+    return res.status === 204 ? null : res.json();
+  },
+  /* Haal de volledige bestandsboom recursief op */
+  async getTree() {
+    const [owner, repo] = config.repo.split('/');
+    if (!owner || !repo) throw new Error('Repo-formaat moet "owner/repo" zijn.');
+    const data = await this.req(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(config.branch)}?recursive=1`);
+    if (data.truncated) toast('Let op: repo is groot, bestandsboom is afgekapt door GitHub.', 'info', 6000);
+    return data.tree || [];
+  },
+  /* Lees één bestand (content + sha) */
+  async getFile(path) {
+    const [owner, repo] = config.repo.split('/');
+    const data = await this.req(`/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(config.branch)}`);
+    return data; // { content(base64), sha, encoding, size, ... }
+  },
+  /* Schrijf/commit een bestand (PUT). sha optioneel (nodig bij update). */
+  async putFile(path, base64content, message, sha) {
+    const [owner, repo] = config.repo.split('/');
+    const body = { message, content: base64content, branch: config.branch };
+    if (sha) body.sha = sha;
+    return this.req(`/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      method: 'PUT',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(body),
+    });
+  },
+  async testConnection() {
+    const [owner, repo] = config.repo.split('/');
+    if (!owner || !repo) throw new Error('Vul owner/repo in.');
+    return this.req(`/repos/${owner}/${repo}`);
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. GEMINI API CLIENT
+   ═══════════════════════════════════════════════════════════════════════════ */
+const Gemini = {
+  async generate(userText, systemInstruction, schema) {
+    if (!config.gemini) throw new Error('Geen Gemini API-sleutel ingesteld.');
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${encodeURIComponent(config.gemini)}`;
+    const body = {
+      contents: [{ role:'user', parts: [{ text: userText }] }],
+      generationConfig: { temperature: 0.7, responseMimeType: 'application/json' },
+    };
+    if (systemInstruction) body.systemInstruction = { parts: [{ text: systemInstruction }] };
+    if (schema) body.generationConfig.responseSchema = schema;
+
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.json()).error?.message || ''; } catch {}
+      throw new Error(`Gemini ${res.status}: ${detail || res.statusText}`);
+    }
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.map(p=>p.text).join('') || '';
+    if (!text) throw new Error('Leeg antwoord van Gemini (mogelijk geblokkeerd door safety-filter).');
+    return text;
+  },
+  /* Robuuste JSON-parse: strip eventuele ```json fences */
+  parseJson(text) {
+    let t = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/,'').trim();
+    return JSON.parse(t);
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. MARKDOWN PREVIEW (marked.js met ingebouwde fallback)
+   ═══════════════════════════════════════════════════════════════════════════ */
+function renderMarkdown(md) {
+  if (window.marked) {
+    try { return window.marked.parse(md, { breaks:true, gfm:true }); }
+    catch {}
+  }
+  return fallbackMarkdown(md); // longevity: werkt ook zonder CDN
+}
+/* Minimalistische markdown-renderer als vangnet (geen externe afhankelijkheid) */
+function fallbackMarkdown(md) {
+  let h = escapeHtml(md);
+  h = h.replace(/```([\s\S]*?)```/g, (m,c)=>`<pre><code>${c.trim()}</code></pre>`);
+  h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+  h = h.replace(/^###### (.*)$/gm,'<h6>$1</h6>').replace(/^##### (.*)$/gm,'<h5>$1</h5>')
+       .replace(/^#### (.*)$/gm,'<h4>$1</h4>').replace(/^### (.*)$/gm,'<h3>$1</h3>')
+       .replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>');
+  h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,'<img alt="$1" src="$2">');
+  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2">$1</a>');
+  h = h.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>');
+  h = h.replace(/^>\s?(.*)$/gm,'<blockquote>$1</blockquote>');
+  h = h.replace(/^(?:-|\*) (.*)$/gm,'<li>$1</li>');
+  h = h.replace(/(<li>[\s\S]*?<\/li>)/g, m => `<ul>${m}</ul>`).replace(/<\/ul>\s*<ul>/g,'');
+  h = h.replace(/^---$/gm,'<hr>');
+  h = h.split(/\n{2,}/).map(block => /^\s*<(h\d|ul|ol|pre|blockquote|hr|img|table)/.test(block.trim()) ? block : (block.trim() ? `<p>${block.trim().replace(/\n/g,'<br>')}</p>` : '')).join('\n');
+  return h;
+}
+
+/* ── Frontmatter helpers (YAML-ish, alleen top-level key: value) ─────────── */
+function splitFrontmatter(text) {
+  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (m) return { fm: m[1], body: m[2], hasFm: true };
+  return { fm: '', body: text, hasFm: false };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7. FILE TREE UI
+   ═══════════════════════════════════════════════════════════════════════════ */
+const EDITABLE_EXT = ['md','markdown','json','html','htm','txt','css','js','yml','yaml','xml','svg'];
+const fileIcon = path => {
+  const ext = path.split('.').pop().toLowerCase();
+  if (['md','markdown'].includes(ext)) return '📝';
+  if (ext === 'json') return '🔧';
+  if (['html','htm'].includes(ext)) return '🌐';
+  if (['png','jpg','jpeg','gif','webp','svg','avif'].includes(ext)) return '🖼';
+  if (ext === 'css') return '🎨';
+  if (ext === 'js') return '⚙';
+  return '📄';
+};
+const isImage = path => ['png','jpg','jpeg','gif','webp','svg','avif','bmp'].includes(path.split('.').pop().toLowerCase());
+
+function buildTreeData(flat) {
+  const root = {};
+  for (const item of flat) {
+    const parts = item.path.split('/');
+    let node = root;
+    parts.forEach((part, i) => {
+      const isLeaf = i === parts.length - 1;
+      if (!node[part]) node[part] = { __meta:{ name:part, path:parts.slice(0,i+1).join('/'), type: isLeaf ? item.type : 'tree' }, __children:{} };
+      if (!isLeaf) node = node[part].__children;
+    });
+  }
+  return root;
+}
+
+function renderTree() {
+  const container = $('#fileTree');
+  container.innerHTML = '';
+  if (state.loadingTree) {
+    container.append(el('div',{class:'loading-block'}, el('div',{class:'spinner dark'}), 'Bestandsboom laden…'));
+    return;
+  }
+  if (!isConfigured()) {
+    container.innerHTML = '<div class="tree-empty">Verbind eerst met je GitHub-repository via&nbsp;<b>⚙ Instellingen</b>.</div>';
+    return;
+  }
+  if (!state.tree.length) {
+    container.innerHTML = '<div class="tree-empty">Geen bestanden gevonden.<br>Klik op <b>⟳</b> om te vernieuwen.</div>';
+    return;
+  }
+
+  const filter = $('#fileFilter').value.trim().toLowerCase();
+  let flat = state.tree.filter(t => t.type === 'blob');
+  if (filter) flat = flat.filter(t => t.path.toLowerCase().includes(filter));
+
+  if (filter) {
+    // Platte, gefilterde lijst
+    if (!flat.length) { container.innerHTML = '<div class="tree-empty">Geen match.</div>'; return; }
+    flat.sort((a,b)=>a.path.localeCompare(b.path)).forEach(item => {
+      container.append(renderFileRow(item.path, item.path, 0));
+    });
+    return;
+  }
+
+  const treeData = buildTreeData(state.tree);
+  renderTreeNode(treeData, container, 0);
+}
+
+function renderTreeNode(node, parent, depth) {
+  const entries = Object.values(node);
+  // Mappen eerst, dan bestanden — alfabetisch
+  entries.sort((a,b) => {
+    const at = a.__meta.type === 'tree', bt = b.__meta.type === 'tree';
+    if (at !== bt) return at ? -1 : 1;
+    return a.__meta.name.localeCompare(b.__meta.name);
+  });
+  for (const entry of entries) {
+    const { name, path, type } = entry.__meta;
+    if (type === 'tree') {
+      const childWrap = el('div', { class:'tree-children' });
+      const collapsed = depth >= 1; // top-level open, dieper dicht
+      childWrap.style.display = collapsed ? 'none' : 'block';
+      const caret = el('span', { class:'caret' }, collapsed ? '▶' : '▼');
+      const row = el('div', { class:'tree-item dir', style:`padding-left:${8+depth*14}px`,
+        onclick: () => {
+          const open = childWrap.style.display === 'none';
+          childWrap.style.display = open ? 'block' : 'none';
+          caret.textContent = open ? '▼' : '▶';
+        }
+      }, caret, el('span',{class:'ico'},'📁'), el('span',{class:'name'}, name));
+      parent.append(row);
+      renderTreeNode(entry.__children, childWrap, depth+1);
+      parent.append(childWrap);
+    } else {
+      parent.append(renderFileRow(path, name, depth));
+    }
+  }
+}
+
+function renderFileRow(path, label, depth) {
+  const row = el('div', {
+    class:'tree-item' + (state.current && state.current.path === path ? ' active' : ''),
+    style:`padding-left:${8+depth*14+14}px`,
+    title: path,
+    onclick: () => openFile(path)
+  }, el('span',{class:'ico'}, fileIcon(path)), el('span',{class:'name'}, label));
+  row.dataset.path = path;
+  return row;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   8. FILE OPEN / EDIT / VIEW
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function loadTree() {
+  if (!isConfigured()) return;
+  state.loadingTree = true; renderTree();
+  try {
+    state.tree = await GitHub.getTree();
+    toast(`${state.tree.filter(t=>t.type==='blob').length} bestanden geladen.`, 'success', 2500);
+  } catch (e) {
+    toast(e.message, 'error', 7000);
+    state.tree = [];
+  } finally {
+    state.loadingTree = false; renderTree();
+  }
+}
+
+async function openFile(path) {
+  if (state.dirty && !confirm('Er zijn niet-opgeslagen wijzigingen. Toch een ander bestand openen?')) return;
+
+  if (isImage(path)) {
+    // Toon afbeelding-preview i.p.v. tekst-editor
+    const [owner, repo] = config.repo.split('/');
+    const raw = `https://raw.githubusercontent.com/${owner}/${repo}/${config.branch}/${path.split('/').map(encodeURIComponent).join('/')}`;
+    state.current = null; state.dirty = false;
+    $('#editorPlaceholder').style.display = 'none';
+    $('#editorBar').style.display = 'flex';
+    $('#curPath').textContent = path;
+    $('#curMeta').textContent = 'afbeelding — alleen-lezen';
+    $('#editPane').classList.add('hidden'); $('#previewPane').classList.remove('hidden');
+    $('#preview').className = 'preview';
+    $('#preview').innerHTML = `<div style="text-align:center;padding:20px;"><img src="${raw}" style="max-width:100%;border-radius:12px;box-shadow:var(--shadow-md);"><p style="margin-top:16px;font-size:12px;color:var(--n-400);font-family:var(--font-mono);">${escapeHtml(path)}</p></div>`;
+    updateActiveRow(path);
+    return;
+  }
+
+  try {
+    $('#curPath').textContent = 'Laden…';
+    $('#editorBar').style.display = 'flex';
+    $('#editorPlaceholder').style.display = 'none';
+    const data = await GitHub.getFile(path);
+    if (Array.isArray(data)) { toast('Dit is een map, geen bestand.', 'error'); return; }
+    const content = decodeBase64(data.content);
+    state.current = { path, sha: data.sha, content, original: content, size: data.size };
+    state.dirty = false;
+    state.aiSuggestion = null;
+    resetCopilot();
+
+    $('#editor').value = content;
+    $('#curPath').textContent = path;
+    updateFileMeta();
+    updateFrontmatterNote();
+    setView(state.view); // behoud de huidige weergave (Editor/Split/Preview) bij het openen
+    updatePreview();
+    updateActiveRow(path);
+    updateButtons();
+  } catch (e) {
+    toast(e.message, 'error', 7000);
+    $('#curPath').textContent = '—';
+  }
+}
+
+function updateActiveRow(path) {
+  $$('.tree-item').forEach(r => r.classList.toggle('active', r.dataset.path === path));
+}
+
+function updateFileMeta() {
+  if (!state.current) return;
+  const kb = (new TextEncoder().encode(state.current.content).length / 1024).toFixed(1);
+  $('#curMeta').innerHTML = `${kb} KB${state.dirty ? ' · <span class="dirty-dot">● niet opgeslagen</span>' : ' · opgeslagen'}`;
+}
+
+function updateFrontmatterNote() {
+  const note = $('#fmNote');
+  if (!state.current) { note.style.display='none'; return; }
+  const { hasFm } = splitFrontmatter(state.current.content);
+  if (hasFm && (state.current.path.endsWith('.md')||state.current.path.endsWith('.markdown'))) {
+    note.style.display = 'block';
+    note.textContent = 'ℹ Dit bestand heeft YAML-frontmatter (tussen --- regels). Preview toont alleen de body.';
+  } else note.style.display = 'none';
+}
+
+function setView(view) {
+  state.view = view;
+  $$('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+  const editPane = $('#editPane'), prevPane = $('#previewPane');
+  editPane.classList.toggle('hidden', view === 'preview');
+  editPane.classList.toggle('pane-split', view === 'split');
+  prevPane.classList.toggle('hidden', view === 'edit');
+  if (view !== 'edit') updatePreview();
+}
+
+/* Bereid HTML voor op de preview:
+   1) <base href> naar raw.githubusercontent zodat relatieve assets (logo,
+      images/…) resolven tegen de repo (altijd vers, juiste content-type).
+   2) Een klik-interceptor: klikken op een interne .html-link opent die
+      pagina in de CMS-editor i.p.v. de ruwe bron te tonen. */
+function withPreviewBase(html, path) {
+  if (!isConfigured()) return html;
+  const [owner, repo] = config.repo.split('/');
+  if (!owner || !repo) return html;
+  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+  const base = `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(config.branch)}/${dir}`;
+
+  // In klik-bewerken-modus: klik op tekst → selecteer in de editor (via postMessage).
+  // Anders: klik op interne link → open die pagina in de CMS.
+  const editScript = `<script>
+(function(){
+  var TAGS='h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,td,th,a,span,button';
+  var st=document.createElement('style');
+  st.textContent='.cms-hl{outline:2px solid #f7588e!important;outline-offset:2px;background:rgba(247,88,142,.10)!important;cursor:pointer!important}'
+    +'.cms-hl-img{outline:3px solid #4ab9d8!important;outline-offset:2px;cursor:grab!important}'
+    +'.cms-drag{cursor:grabbing!important}';
+  document.documentElement.appendChild(st);
+  var down=null, cur=null;
+  function pickText(t){return t.closest&&t.closest(TAGS);}
+  function bgUrl(node){for(var n=node;n&&n.nodeType===1;n=n.parentElement){var b=getComputedStyle(n).backgroundImage;var m=b&&b.match(/url\\(["']?([^"')]+)/);if(m&&/^https?:/.test(m[1]))return{node:n,url:m[1]};}return null;}
+  // afbeelding onder de cursor — maar tekst heeft voorrang (zodat je tekst kunt bewerken)
+  function pickImage(t){
+    var img=t.closest&&t.closest('img'); if(img) return {node:img,url:img.currentSrc||img.src,kind:'obj'};
+    var tx=pickText(t); if(tx&&(tx.textContent||'').trim()) return null;
+    var bg=bgUrl(t); if(bg) return {node:bg.node,url:bg.url,kind:'bg'};
+    return null;
+  }
+  function pct(v){ if(!v) return 50; v=(''+v).trim(); if(v.slice(-1)==='%') return parseFloat(v); if(v==='left'||v==='top') return 0; if(v==='right'||v==='bottom') return 100; if(v==='center') return 50; return 50; }
+  function curPos(node,kind){ var inl=(kind==='obj'?node.style.objectPosition:node.style.backgroundPosition); var s=getComputedStyle(node); var v=inl||(kind==='obj'?s.objectPosition:s.backgroundPosition)||'50% 50%'; var p=v.trim().split(/\\s+/); return {x:pct(p[0]), y:pct(p[1]||'50%')}; }
+  function clamp(n){return Math.max(0,Math.min(100,n));}
+  function clearHl(){if(cur){cur.classList.remove('cms-hl');cur.classList.remove('cms-hl-img');cur=null;}}
+  function inTb(t){return t&&t.closest&&t.closest('[data-cmstb]');}
+  // Zoom-knopje (− / +) dat op een achtergrondfoto verschijnt (geen scroll-kaping meer)
+  var tb=document.createElement('div');
+  tb.setAttribute('data-cmstb','1');
+  tb.style.cssText='position:fixed;z-index:2147483647;display:none;align-items:center;gap:2px;background:rgba(29,19,57,.92);border-radius:10px;padding:4px;box-shadow:0 6px 18px rgba(0,0,0,.35);font-family:Arial,sans-serif';
+  function mkBtn(txt){var b=document.createElement('button');b.type='button';b.textContent=txt;b.style.cssText='width:30px;height:30px;border:none;background:transparent;color:#fff;font-size:18px;line-height:1;cursor:pointer;border-radius:7px';b.onmouseenter=function(){b.style.background='rgba(255,255,255,.16)'};b.onmouseleave=function(){b.style.background='transparent'};return b;}
+  var bMinus=mkBtn('\\u2212'), bPlus=mkBtn('+'), lbl=document.createElement('span');
+  bMinus.textContent='\\u2212';
+  lbl.style.cssText='color:#fff;font-size:11px;min-width:40px;text-align:center;opacity:.9';lbl.textContent='zoom';
+  tb.appendChild(bMinus);tb.appendChild(lbl);tb.appendChild(bPlus);document.documentElement.appendChild(tb);
+  var tbNode=null;
+  function sizePct(node){var bs=node.style.backgroundSize;var v=parseFloat(bs);return (bs&&bs.indexOf('%')>=0&&!isNaN(v))?v:135;}
+  function showTb(node){tbNode=node;var r=node.getBoundingClientRect();tb.style.top=Math.max(80,r.top+12)+'px';tb.style.left=(r.right-118)+'px';tb.style.display='flex';lbl.textContent=Math.round(sizePct(node))+'%';}
+  function hideTb(){tb.style.display='none';tbNode=null;}
+  function zoomBy(d){if(!tbNode)return;var z=Math.max(105,Math.min(260,sizePct(tbNode)+d));tbNode.style.backgroundSize=z+'%';lbl.textContent=Math.round(z)+'%';var m=getComputedStyle(tbNode).backgroundImage.match(/url\\(["']?([^"')]+)/);if(m)parent.postMessage({__cmsZoom:{url:m[1],size:z+'%'}},'*');}
+  bMinus.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();zoomBy(-8);});
+  bPlus.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();zoomBy(8);});
+  document.addEventListener('mouseover',function(e){
+    if(down)return; if(inTb(e.target))return;   // over de zoombalk → laten staan
+    var im=pickImage(e.target);var el=im?im.node:pickText(e.target);
+    if(cur&&cur!==el)clearHl();if(el){cur=el;el.classList.add(im?'cms-hl-img':'cms-hl');}
+    if(im&&im.kind==='bg') showTb(im.node); else hideTb();
+  },true);
+  document.addEventListener('mouseout',function(){if(!down)clearHl();},true);
+  document.addEventListener('mousedown',function(e){
+    if(inTb(e.target)) return;                           // zoombalk → geen drag
+    var im=pickImage(e.target); if(!im) return;         // tekst → laat 'click' het afhandelen
+    e.preventDefault();
+    var p=curPos(im.node,im.kind);
+    down={node:im.node,url:im.url,kind:im.kind,sx:e.clientX,sy:e.clientY,px:p.x,py:p.y,nx:p.x,ny:p.y,moved:false,w:im.node.clientWidth||1,h:im.node.clientHeight||1};
+    im.node.classList.add('cms-drag');
+  },true);
+  document.addEventListener('mousemove',function(e){
+    if(!down) return;
+    var dx=e.clientX-down.sx, dy=e.clientY-down.sy;
+    if(Math.abs(dx)>4||Math.abs(dy)>4) down.moved=true;
+    // Slim: sleep je horizontaal terwijl de achtergrond nog op "cover" staat?
+    // Dan is er geen zijruimte → zoom automatisch iets in zodat schuiven werkt zonder gat.
+    if(down.kind==='bg' && !down.autoz){
+      var bs=down.node.style.backgroundSize;
+      if((!bs||bs==='cover'||bs==='auto') && Math.abs(dx)>Math.abs(dy) && Math.abs(dx)>6){
+        down.node.style.backgroundSize='135%'; down.autoz=true;
+        parent.postMessage({__cmsZoom:{url:down.url,size:'135%'}},'*');
+      }
+    }
+    down.nx=clamp(down.px - dx/down.w*100);
+    down.ny=clamp(down.py - dy/down.h*100);
+    if(down.kind==='obj') down.node.style.objectPosition=down.nx+'% '+down.ny+'%';
+    else down.node.style.backgroundPosition=down.nx+'% '+down.ny+'%';
+  },true);
+  document.addEventListener('mouseup',function(){
+    if(!down) return; var d=down; down=null; d.node.classList.remove('cms-drag');
+    if(d.moved) parent.postMessage({__cmsReposition:{url:d.url,kind:d.kind,x:Math.round(d.nx),y:Math.round(d.ny)}},'*');
+    else parent.postMessage({__cmsImage:d.url},'*');
+  },true);
+  document.addEventListener('click',function(e){
+    if(inTb(e.target)) return;                                                // zoombalk → eigen handler
+    if(pickImage(e.target)){e.preventDefault();e.stopPropagation();return;}   // afbeeldingen via mousedown/up
+    var el=pickText(e.target); if(!el)return; e.preventDefault(); e.stopPropagation();
+    var txt=(el.textContent||'').replace(/\\s+/g,' ').trim(); if(txt) parent.postMessage({__cmsEdit:txt},'*');
+  },true);
+})();
+<\/script>`;
+  const navScript = `<script>
+document.addEventListener('click',function(e){
+  var a=e.target.closest&&e.target.closest('a'); if(!a) return;
+  var href=a.getAttribute('href')||'';
+  if(/^(https?:|mailto:|tel:|#)/i.test(href)) return;         // extern/anker: met rust laten
+  if(/\\.html?($|[?#])/i.test(href)){                          // interne pagina → open in CMS
+    e.preventDefault(); parent.postMessage({__cmsNav:href},'*');
+  }
+},true);
+<\/script>`;
+  const inject = `<base href="${base}">\n` + (state.editMode ? editScript : navScript);
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, m => m + '\n' + inject);
+  if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, m => m + '\n<head>' + inject + '</head>');
+  return inject + html;
+}
+
+function updatePreview() {
+  if (!state.current) return;
+  const path = state.current.path;
+  const prev = $('#preview');
+  const val = $('#editor').value;
+
+  if (path.endsWith('.html') || path.endsWith('.htm')) {
+    // HTML live preview in iframe (gesandboxed).
+    // Injecteer <base href> naar raw.githubusercontent zodat relatieve
+    // assets (logo, /images/…) óók in de preview correct laden.
+    prev.className = 'preview frame-mode';
+    prev.innerHTML = '';
+    const frame = el('iframe', { class:'preview-html-frame', sandbox:'allow-same-origin allow-scripts' });
+    prev.append(frame);
+    frame.srcdoc = withPreviewBase(val, path);
+  } else if (path.endsWith('.md') || path.endsWith('.markdown')) {
+    prev.className = 'preview md' + (state.editMode ? ' editable' : '');
+    const { body } = splitFrontmatter(val);
+    prev.innerHTML = renderMarkdown(body);
+  } else if (path.endsWith('.json')) {
+    prev.className = 'preview md';
+    try { prev.innerHTML = `<pre><code>${escapeHtml(JSON.stringify(JSON.parse(val), null, 2))}</code></pre>`; }
+    catch(e) { prev.innerHTML = `<p style="color:var(--error)">Ongeldige JSON: ${escapeHtml(e.message)}</p>`; }
+  } else {
+    prev.className = 'preview md';
+    prev.innerHTML = `<pre><code>${escapeHtml(val)}</code></pre>`;
+  }
+}
+
+/* ── Klik-om-te-bewerken: fragment robuust terugvinden & selecteren ───────── */
+
+/* Decodeer één HTML-entiteit naar een teken (via de browser, dus altijd correct) */
+const _entCache = {};
+function decodeEnt(ent) {
+  if (ent in _entCache) return _entCache[ent];
+  const t = document.createElement('textarea');
+  t.innerHTML = ent;
+  const v = t.value;
+  const out = (v.length === 1) ? v : null; // niet-herkende entiteit → null
+  _entCache[ent] = out;
+  return out;
+}
+function escapeHtmlText(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* Zet HTML-bron om naar platte tekst (tags weg, entiteiten gedecodeerd,
+   witruimte samengevouwen) mét een positiemap terug naar de bron. */
+function htmlToPlainWithMap(src) {
+  let plain = ''; const map = [], mapEnd = [];
+  let i = 0; const n = src.length; let lastSpace = false;
+  const push = (ch, s, e) => { plain += ch; map.push(s); mapEnd.push(e); };
+  while (i < n) {
+    const c = src[i];
+    if (c === '<') { let j = src.indexOf('>', i); if (j < 0) j = n - 1; i = j + 1; lastSpace = false; continue; }
+    if (c === '&') {
+      let j = src.indexOf(';', i);
+      if (j > 0 && j - i <= 12) {
+        const ent = src.slice(i, j + 1), ch = decodeEnt(ent);
+        if (ch != null) {
+          if (/\s/.test(ch)) { if (!lastSpace) { push(' ', i, j + 1); lastSpace = true; } else { mapEnd[mapEnd.length - 1] = j + 1; } }
+          else { push(ch, i, j + 1); lastSpace = false; }
+          i = j + 1; continue;
+        }
+      }
+      push('&', i, i + 1); lastSpace = false; i++; continue;
+    }
+    if (/\s/.test(c)) { if (!lastSpace) { push(' ', i, i + 1); lastSpace = true; } else { mapEnd[mapEnd.length - 1] = i + 1; } i++; continue; }
+    push(c, i, i + 1); lastSpace = false; i++;
+  }
+  return { plain, map, mapEnd };
+}
+
+/* Vind het bereik [start,end] in de bron dat overeenkomt met de (gerenderde) tekst */
+function findTextRange(src, text) {
+  const needle = (text || '').replace(/\s+/g, ' ').trim();
+  if (!needle) return null;
+  const exact = src.indexOf(text);
+  if (exact >= 0) return [exact, exact + text.length];              // snelle exacte treffer
+  const { plain, map, mapEnd } = htmlToPlainWithMap(src);
+  const hay = plain, low = plain.toLowerCase(), nlow = needle.toLowerCase();
+  let p = hay.indexOf(needle);
+  if (p < 0) p = low.indexOf(nlow);
+  let len = needle.length;
+  if (p < 0) {                                                       // val terug op een korter prefix
+    for (let L = needle.length - 1; L >= Math.min(15, needle.length); L--) {
+      const q = low.indexOf(nlow.slice(0, L));
+      if (q >= 0) { p = q; len = L; break; }
+    }
+  }
+  if (p < 0) return null;
+  return [ map[p], mapEnd[p + len - 1] ];
+}
+
+function scrollTextareaToSelection(ta, pos) {
+  const line = ta.value.slice(0, pos).split('\n').length;
+  const lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+  ta.scrollTop = Math.max(0, (line - 3) * lh);
+}
+
+function selectSnippet(text) {
+  if (!state.current) return;
+  const ta = $('#editor');
+  const range = findTextRange(ta.value, text);
+  if (!range) {
+    toast('Kon dit fragment niet automatisch koppelen (bijv. een animatie of samengesteld element). Bewerk het in de editor.', 'info', 6000);
+    return;
+  }
+  if (state.view === 'preview') setView('split');
+  const raw = ta.value.slice(range[0], range[1]);
+  ta.focus();
+  ta.setSelectionRange(range[0], range[1]);
+  scrollTextareaToSelection(ta, range[0]);
+  state.selection = { text: text.replace(/\s+/g, ' ').trim(), raw, hasTags: /<[^>]+>/.test(raw) };
+  showSelectionChip(state.selection);
+}
+
+function showSelectionChip(sel) {
+  const bar = $('#aiSelection');
+  bar.style.display = 'block';
+  bar.innerHTML = '';
+  const box = el('textarea', { class:'sel-edit', id:'selEditBox', rows:'3', spellcheck:'false' });
+  box.value = sel.text;
+  bar.append(
+    el('span', { class:'sel-label' }, 'Geselecteerd fragment'),
+    el('span', { class:'sel-clear', title:'Selectie wissen', onclick: clearSelection }, '✕'),
+    box,
+    el('button', { class:'btn btn-teal btn-sm', style:'width:100%; margin-top:6px;', onclick: applyManualEdit }, '✎ Handmatige wijziging toepassen')
+  );
+  if (sel.hasTags) bar.append(el('div', { class:'sel-warn' }, 'Let op: dit fragment bevat opmaak — bij toepassen kan die verloren gaan. Bewerk desnoods in de editor.'));
+  $('#btnAskAI').innerHTML = '✦ Vraag AI over selectie';
+}
+
+function clearSelection() {
+  state.selection = null;
+  const bar = $('#aiSelection');
+  if (bar) { bar.style.display = 'none'; bar.innerHTML = ''; }
+  const b = $('#btnAskAI'); if (b) b.innerHTML = '✦ Vraag AI Advies';
+}
+
+/* Vervang het geselecteerde fragment in de bron door nieuwe tekst */
+function replaceSelection(newText) {
+  if (!state.selection || !state.current) return false;
+  const ta = $('#editor'); const src = ta.value;
+  let start, end;
+  const idx = state.selection.raw ? src.indexOf(state.selection.raw) : -1;
+  if (idx >= 0) { start = idx; end = idx + state.selection.raw.length; }
+  else { const r = findTextRange(src, state.selection.text); if (!r) return false; [start, end] = r; }
+  const repl = /\.html?$/.test(state.current.path) ? escapeHtmlText(newText) : newText;
+  ta.value = src.slice(0, start) + repl + src.slice(end);
+  state.current.content = ta.value;
+  state.dirty = ta.value !== state.current.original;
+  ta.focus(); ta.setSelectionRange(start, start + repl.length); scrollTextareaToSelection(ta, start);
+  updateFileMeta(); updatePreview();
+  return true;
+}
+
+function applyManualEdit() {
+  const box = $('#selEditBox'); if (!box || !state.selection) return;
+  if (box.value === state.selection.text) { toast('Geen wijziging om toe te passen.', 'info'); return; }
+  if (replaceSelection(box.value)) {
+    clearSelection();
+    $('#btnApplyAI').style.display = 'none';
+    toast('Tekst handmatig aangepast.', 'success');
+  } else {
+    toast('Kon het fragment niet vervangen — bewerk in de editor.', 'error', 6000);
+  }
+}
+
+/* Klik in de (markdown/tekst) preview → selecteer het fragment in de editor */
+$('#preview').addEventListener('click', e => {
+  if (!state.editMode || !state.current) return;
+  if (/\.html?$/.test(state.current.path)) return; // HTML-iframe regelt dit zelf
+  const elx = e.target.closest('h1,h2,h3,h4,h5,h6,p,li,blockquote,a,strong,em,span,td,th');
+  if (!elx) return;
+  const t = (elx.textContent || '').replace(/\s+/g, ' ').trim();
+  if (t) selectSnippet(t);
+});
+
+function updateButtons() {
+  const hasFile = !!state.current;
+  $('#btnPublish').disabled = !hasFile;
+  $('#btnAskAI').disabled = !hasFile || !config.gemini;
+  $('#btnImage').style.display = hasFile ? 'inline-flex' : 'none';
+  $('#btnEditMode').style.display = hasFile ? 'inline-flex' : 'none';
+}
+
+/* Editor input → mark dirty, update preview */
+$('#editor').addEventListener('input', () => {
+  if (!state.current) return;
+  state.current.content = $('#editor').value;
+  state.dirty = state.current.content !== state.current.original;
+  updateFileMeta();
+  if (state.view !== 'edit') updatePreview();
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   9. AI CO-PILOT
+   ═══════════════════════════════════════════════════════════════════════════ */
+const ADVICE_SCHEMA = {
+  type:'object',
+  properties: {
+    suggested_text: { type:'string' },
+    seo_reasoning: { type:'string' },
+    ai_eo_improvements: { type:'array', items:{ type:'string' } }
+  },
+  required:['suggested_text','seo_reasoning','ai_eo_improvements']
+};
+
+function resetCopilot() {
+  $('#copilotBody').innerHTML = `<div class="ai-empty"><span class="ico">✦</span>Open een bestand en klik op <b>Vraag AI Advies</b> om suggesties te ontvangen.</div>`;
+  $('#btnApplyAI').style.display = 'none';
+  $('#btnApplyAI').disabled = true;
+  state.aiSuggestion = null;
+  clearSelection();
+}
+
+async function askAI() {
+  if (!state.current) return;
+  if (!config.gemini) { toast('Stel eerst een Gemini API-sleutel in.', 'error'); openSettings('ai'); return; }
+
+  const btn = $('#btnAskAI');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> AI denkt na…';
+  const sel = state.selection && state.selection.text;
+  $('#copilotBody').innerHTML = `<div class="loading-block"><div class="spinner dark"></div>${sel ? 'Geselecteerd fragment' : 'Content'} analyseren en suggesties genereren…</div>`;
+
+  const { body } = splitFrontmatter($('#editor').value);
+  const scope = sel
+    ? '\n\nJe taak: verbeter UITSLUITEND het onderstaande fragment. Behoud de betekenis, toon en eventuele opmaak. Geef in "suggested_text" alleen het verbeterde fragment terug (geen omringende tekst).'
+    : '\n\nJe taak: verbeter de aangeleverde content. Geef in "suggested_text" de volledig herschreven versie (behoud markdown-opmaak waar aanwezig).';
+  const sys = (config.sysPrompt || 'Je bent een ervaren Nederlandse SEO-copywriter en contentstrateeg.') +
+    scope +
+    '\n\nAntwoord UITSLUITEND met een JSON-object met exact deze velden:' +
+    '\n- "suggested_text": de verbeterde tekst.' +
+    '\n- "seo_reasoning": korte uitleg (2-4 zinnen) waarom deze versie beter scoort voor zoekmachines.' +
+    '\n- "ai_eo_improvements": een array van 3-6 concrete verbeteringen voor AI-vindbaarheid (AI Engine Optimization): duidelijke structuur, feitelijke antwoorden, entiteiten, vraag-antwoord formuleringen, etc.';
+
+  const userText = sel
+    ? `Verbeter dit fragment (bestand: ${state.current.path}):\n\n"""\n${sel}\n"""`
+    : `Hier is de content (bestand: ${state.current.path}):\n\n"""\n${body}\n"""`;
+
+  try {
+    const raw = await Gemini.generate(userText, sys, ADVICE_SCHEMA);
+    const advice = Gemini.parseJson(raw);
+    state.aiSuggestion = advice.suggested_text || '';
+    renderAdvice(advice);
+    $('#btnApplyAI').style.display = 'inline-flex';
+    $('#btnApplyAI').disabled = !state.aiSuggestion;
+  } catch (e) {
+    $('#copilotBody').innerHTML = `<div class="ai-empty" style="color:var(--error)"><span class="ico">⚠</span>${escapeHtml(e.message)}</div>`;
+    toast(e.message, 'error', 7000);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = state.selection ? '✦ Vraag AI over selectie' : '✦ Vraag AI Advies';
+  }
+}
+
+function renderAdvice(a) {
+  const body = $('#copilotBody');
+  body.innerHTML = '';
+  // Suggested text
+  body.append(el('div',{class:'ai-section'},
+    el('div',{class:'ai-section-label'}, 'Voorgestelde tekst', el('span',{class:'badge'},'suggestie')),
+    el('div',{class:'ai-suggestion'}, a.suggested_text || '(leeg)')
+  ));
+  // SEO reasoning
+  if (a.seo_reasoning) body.append(el('div',{class:'ai-section'},
+    el('div',{class:'ai-section-label'}, 'SEO-onderbouwing'),
+    el('div',{class:'ai-reasoning'}, a.seo_reasoning)
+  ));
+  // AI-EO improvements
+  if (Array.isArray(a.ai_eo_improvements) && a.ai_eo_improvements.length) {
+    const ul = el('ul',{class:'ai-list'});
+    a.ai_eo_improvements.forEach((imp,i)=> ul.append(el('li', {}, el('span',{class:'n'}, String(i+1)), el('span',{}, imp))));
+    body.append(el('div',{class:'ai-section'},
+      el('div',{class:'ai-section-label'}, 'AI-EO verbeteringen', el('span',{class:'badge'},'AI-vindbaarheid')),
+      ul
+    ));
+  }
+}
+
+function applyAI() {
+  if (!state.aiSuggestion || !state.current) return;
+  const ta = $('#editor');
+
+  // Fragment-modus: vervang alleen het geselecteerde fragment
+  if (state.selection) {
+    if (replaceSelection(state.aiSuggestion)) {
+      clearSelection();
+      $('#btnApplyAI').style.display = 'none';
+      toast('Fragment vervangen door AI-suggestie.', 'success');
+    } else {
+      toast('Fragment niet meer terug te vinden — bewerk handmatig.', 'error', 6000);
+    }
+    return;
+  }
+
+  // Volledige-document-modus: behoud frontmatter, vervang de body
+  const { hasFm, fm } = splitFrontmatter(ta.value);
+  const newContent = hasFm ? `---\n${fm}\n---\n\n${state.aiSuggestion}` : state.aiSuggestion;
+  ta.value = newContent;
+  state.current.content = newContent;
+  state.dirty = newContent !== state.current.original;
+  updateFileMeta();
+  updatePreview();
+  toast('Suggestie toegepast in de editor.', 'success');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   10. AFBEELDING-OPTIMALISATIE (HTML5 Canvas → WebP)
+   ═══════════════════════════════════════════════════════════════════════════ */
+const MAX_WIDTH = 1200, WEBP_QUALITY = 0.8;
+
+function optimizeImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return reject(new Error('Geen afbeelding.'));
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > MAX_WIDTH) { height = Math.round(height * MAX_WIDTH / width); width = MAX_WIDTH; }
+      const canvas = el('canvas'); canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(blob => {
+        if (!blob) return reject(new Error('Optimalisatie mislukt.'));
+        blob.arrayBuffer().then(buf => resolve({ blob, buffer: buf, width, height }));
+      }, 'image/webp', WEBP_QUALITY);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Kan afbeelding niet laden.')); };
+    img.src = url;
+  });
+}
+
+function slugifyFilename(name) {
+  const base = name.replace(/\.[^.]+$/,'').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60) || 'afbeelding';
+  const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  return `${base}-${stamp}.webp`;
+}
+
+async function handleImageFile(file) {
+  if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
+  toast(`"${file.name}" optimaliseren…`, 'info', 2000);
+  try {
+    const { buffer, width, height } = await optimizeImage(file);
+    const fname = slugifyFilename(file.name);
+    const dir = (config.imgDir || 'images').replace(/^\/+|\/+$/g,'');
+    const path = `${dir}/${fname}`;
+    const kb = (buffer.byteLength/1024).toFixed(1);
+    toast(`Uploaden: ${path} (${width}×${height}, ${kb} KB)…`, 'info', 2500);
+    await GitHub.putFile(path, arrayBufferToBase64(buffer), `Afbeelding toegevoegd via CMS: ${fname}`);
+    // Markdown-link invoegen op cursorpositie
+    insertAtCursor($('#editor'), `\n![${file.name.replace(/\.[^.]+$/,'')}](/${path})\n`);
+    if (state.current) {
+      state.current.content = $('#editor').value;
+      state.dirty = state.current.content !== state.current.original;
+      updateFileMeta(); updatePreview();
+    }
+    toast(`Afbeelding geüpload naar /${path} en link ingevoegd.`, 'success', 5000);
+    loadTree();
+  } catch (e) {
+    toast('Afbeelding-fout: ' + e.message, 'error', 7000);
+  }
+}
+
+function insertAtCursor(textarea, text) {
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? textarea.value.length;
+  textarea.value = textarea.value.slice(0,start) + text + textarea.value.slice(end);
+  const pos = start + text.length;
+  textarea.selectionStart = textarea.selectionEnd = pos;
+  textarea.focus();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   10b. AFBEELDINGEN BEHEREN — vervangen + maat/afmeting-controle
+   ═══════════════════════════════════════════════════════════════════════════ */
+const IMG_EXT = ['png','jpg','jpeg','webp','gif','svg','avif','bmp'];
+const IMG_MAX_W = 1600;       // maximale breedte voor site-afbeeldingen
+const IMG_TARGET_KB = 300;    // streef-bestandsgrootte
+const IMG_WARN_KB = 400;      // erboven → "Groot"
+
+const isImagePath = p => IMG_EXT.includes(p.split('.').pop().toLowerCase());
+function rawUrl(path) {
+  const [owner, repo] = config.repo.split('/');
+  return `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(config.branch)}/${path.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+/* Optimaliseer een afbeelding (Blob/File) op basis van de doel-extensie.
+   Schaalt naar max IMG_MAX_W en kiest kwaliteit adaptief tot ≤ IMG_TARGET_KB. */
+function optimizeImageAdaptive(fileOrBlob, ext) {
+  return new Promise((resolve, reject) => {
+    ext = ext.toLowerCase();
+    if (ext === 'svg' || ext === 'gif') {         // niet via canvas herkomprimeren
+      fileOrBlob.arrayBuffer().then(buf => resolve({ buffer: buf, width: null, height: null, note: 'onbewerkt overgenomen' })).catch(reject);
+      return;
+    }
+    const img = new Image();
+    const url = URL.createObjectURL(fileOrBlob);
+    img.onload = async () => {
+      URL.revokeObjectURL(url);
+      let width = img.naturalWidth, height = img.naturalHeight;
+      let resized = false;
+      if (width > IMG_MAX_W) { height = Math.round(height * IMG_MAX_W / width); width = IMG_MAX_W; resized = true; }
+      const canvas = el('canvas'); canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      const mime = ext === 'png' ? 'image/png' : (ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/webp');
+      const quals = mime === 'image/png' ? [undefined] : [0.82, 0.72, 0.62];
+      let best = null;
+      for (const q of quals) {
+        const blob = await new Promise(res => canvas.toBlob(res, mime, q));
+        if (!blob) continue;
+        best = blob;
+        if (blob.size / 1024 <= IMG_TARGET_KB) break;
+      }
+      if (!best) { reject(new Error('Kon de afbeelding niet coderen.')); return; }
+      resolve({ buffer: await best.arrayBuffer(), width, height, resized });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Kan afbeelding niet laden.')); };
+    img.src = url;
+  });
+}
+
+async function openImagesManager() {
+  if (!isConfigured()) { toast('Verbind eerst met je GitHub-repository.', 'error'); openSettings('github'); return; }
+  $('#imagesModal').classList.add('open');
+  const grid = $('#imagesGrid');
+  const imgs = state.tree.filter(t => t.type === 'blob' && isImagePath(t.path)).sort((a, b) => a.path.localeCompare(b.path));
+  if (!imgs.length) { grid.innerHTML = '<p class="img-meta">Geen afbeeldingen gevonden. Klik op ⟳ om de bestandsboom te vernieuwen.</p>'; return; }
+  grid.innerHTML = '';
+  imgs.forEach(item => grid.append(buildImageCard(item)));
+}
+
+function buildImageCard(item) {
+  const ext = item.path.split('.').pop().toLowerCase();
+  const kb = item.size / 1024;
+  const card = el('div', { class: 'img-card' });
+  const badge = el('span', { class: 'img-badge ok' }, '…');
+  const thumb = el('img', { class: 'img-thumb', src: rawUrl(item.path) + '?t=' + Date.now(), alt: item.path, loading: 'lazy' });
+  const dims = el('span', { class: 'img-dims' }, '…');
+  const meta = el('div', { class: 'img-meta' }, dims, el('span', {}, ` · ${kb.toFixed(0)} KB`));
+
+  const replaceBtn = el('button', { class: 'btn btn-teal btn-sm', onclick: () => pickReplacement(item) }, '↻ Vervang');
+  const optBtn = el('button', { class: 'btn btn-ghost btn-sm', style: 'display:none;', onclick: () => optimizeExisting(item) }, '⚡ Optimaliseer');
+  const actions = el('div', { class: 'img-actions' }, replaceBtn, optBtn);
+
+  if (ext === 'svg') { dims.textContent = 'SVG (vector)'; badge.textContent = 'OK'; }
+  else {
+    thumb.addEventListener('load', () => {
+      const w = thumb.naturalWidth, h = thumb.naturalHeight;
+      dims.textContent = `${w}×${h}px`;
+      const over = w > IMG_MAX_W || kb > IMG_WARN_KB;
+      badge.textContent = over ? 'Groot' : 'OK';
+      badge.className = 'img-badge ' + (over ? 'warn' : 'ok');
+      optBtn.style.display = over ? 'inline-flex' : 'none';
+      optBtn.title = over ? `Te groot (${w>IMG_MAX_W?'breedte':'bestandsgrootte'}) — klik om te optimaliseren` : '';
+    });
+    thumb.addEventListener('error', () => { dims.textContent = 'kon niet laden'; badge.textContent = '?'; });
+  }
+
+  card.append(
+    el('div', { class: 'img-thumb-wrap' }, thumb, badge),
+    el('div', { class: 'img-info' }, el('span', { class: 'img-path' }, item.path), meta),
+    actions
+  );
+  card._item = item; card._badge = badge; card._dims = dims;
+  return card;
+}
+
+function pickReplacement(item) {
+  const inp = el('input', { type: 'file', accept: 'image/*' });
+  inp.style.cssText = 'position:fixed;left:-9999px;opacity:0';
+  inp.addEventListener('change', () => {
+    const f = inp.files && inp.files[0];
+    inp.remove();                                  // pas verwijderen NA de keuze
+    if (f) commitImageReplacement(item, f);
+  });
+  document.body.append(inp);
+  inp.click();
+}
+
+async function commitImageReplacement(item, fileOrBlob) {
+  const ext = item.path.split('.').pop().toLowerCase();
+  toast(`"${item.path}" optimaliseren…`, 'info', 2500);
+  try {
+    const { buffer, width, height, resized, note } = await optimizeImageAdaptive(fileOrBlob, ext);
+    const newKb = buffer.byteLength / 1024;
+    // verse sha ophalen zodat overschrijven altijd lukt
+    let sha = item.sha;
+    try { const meta = await GitHub.getFile(item.path); if (meta && meta.sha) sha = meta.sha; } catch {}
+    await GitHub.putFile(item.path, arrayBufferToBase64(buffer), `Afbeelding vervangen via CMS: ${item.path}`, sha);
+    const dimTxt = width ? `${width}×${height}px, ` : '';
+    toast(`✓ ${item.path} vervangen (${dimTxt}${newKb.toFixed(0)} KB${resized ? ', verkleind naar 1600px' : ''}${note ? ', ' + note : ''}).`, 'success', 7000);
+    await loadTree();
+    if ($('#imagesModal').classList.contains('open')) openImagesManager();  // manager verversen indien open
+    if (state.current) updatePreview();                                     // preview verversen zodat de nieuwe foto laadt
+  } catch (e) {
+    toast('Vervangen mislukt: ' + e.message, 'error', 8000);
+  }
+}
+
+async function optimizeExisting(item) {
+  toast(`"${item.path}" ophalen en optimaliseren…`, 'info', 2500);
+  try {
+    const res = await fetch(rawUrl(item.path) + '?t=' + Date.now());
+    if (!res.ok) throw new Error('Kon de huidige afbeelding niet ophalen.');
+    const blob = await res.blob();
+    await commitImageReplacement(item, blob);
+  } catch (e) {
+    toast('Optimaliseren mislukt: ' + e.message, 'error', 8000);
+  }
+}
+
+/* Klik op een afbeelding in de preview → koppel aan het repo-bestand en vervang direct */
+function replaceImageFromPreview(url) {
+  const [owner, repo] = config.repo.split('/');
+  let path = null;
+  const marker = `/${owner}/${repo}/${config.branch}/`;
+  const i = url.indexOf(marker);
+  if (i >= 0) path = decodeURIComponent(url.slice(i + marker.length).split('?')[0].split('#')[0]);
+  if (!path) {
+    // val terug: probeer alles ná de origin/host te pakken (relatieve/absolute paden)
+    try { const u = new URL(url); path = decodeURIComponent(u.pathname.replace(/^\/+/, '').split('?')[0]); } catch {}
+  }
+  const item = path && state.tree.find(t => t.path === path && t.type === 'blob');
+  if (!item) {
+    toast('Kon deze afbeelding niet aan een bestand in de repo koppelen. Gebruik anders "🖼 Afbeeldingen".', 'info', 7000);
+    return;
+  }
+  // Een bestandsdialoog kan niet vanuit een postMessage openen (geen klik-gebaar).
+  // Daarom openen we de Afbeeldingen-manager en markeren we dit bestand; daar klik je op "Vervang".
+  openImagesManager();
+  setTimeout(() => highlightImageCard(item.path), 200);
+  toast(`Klik op "↻ Vervang" bij de gemarkeerde afbeelding (${item.path}).`, 'info', 7000);
+}
+
+function highlightImageCard(path) {
+  const card = [...document.querySelectorAll('.img-card')].find(c => c._item && c._item.path === path);
+  if (!card) return;
+  card.scrollIntoView({ block: 'center' });
+  card.style.outline = '3px solid var(--cta)';
+  card.style.outlineOffset = '3px';
+  const btn = card.querySelector('.btn-teal');
+  if (btn) { btn.style.boxShadow = '0 0 0 4px rgba(247,88,142,.35)'; }
+  setTimeout(() => { card.style.outline = ''; if (btn) btn.style.boxShadow = ''; }, 4000);
+}
+
+/* ── Afbeelding verschuiven: nieuwe positie in de bron opslaan ────────────── */
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/* Zet/vervang één CSS-declaratie binnen een inline style-string */
+function upsertDecl(style, prop, value) {
+  const parts = (style || '').split(';').map(s => s.trim()).filter(Boolean)
+    .filter(s => s.split(':')[0].trim().toLowerCase() !== prop.toLowerCase());
+  parts.push(`${prop}:${value}`);
+  return parts.join(';');
+}
+/* Zet een CSS-declaratie (bv. background-position/-size) op het element met dit background-image */
+function setBgDeclInSource(src, path, prop, value) {
+  const re = /style="([^"]*)"/g; let m;
+  while ((m = re.exec(src))) {
+    if (m[1].includes('background-image') && m[1].includes(path)) {
+      const ns = upsertDecl(m[1], prop, value);
+      return src.slice(0, m.index) + `style="${ns}"` + src.slice(m.index + m[0].length);
+    }
+  }
+  return null;
+}
+/* object-position op het <img> met deze src */
+function setObjPositionInSource(src, path, value) {
+  const re = new RegExp('<img\\b[^>]*\\bsrc="[^"]*' + reEsc(path) + '[^"]*"[^>]*>');
+  const m = re.exec(src);
+  if (!m) return null;
+  let tag = m[0];
+  if (/\bstyle="/.test(tag)) tag = tag.replace(/style="([^"]*)"/, (mm, s) => `style="${upsertDecl(s, 'object-position', value)}"`);
+  else tag = tag.replace(/<img\b/, `<img style="object-position:${value}"`);
+  return src.slice(0, m.index) + tag + src.slice(m.index + m[0].length);
+}
+function applyReposition(r) {
+  if (!state.current) return;
+  const [owner, repo] = config.repo.split('/');
+  let path = null;
+  const marker = `/${owner}/${repo}/${config.branch}/`;
+  const i = r.url.indexOf(marker);
+  if (i >= 0) path = decodeURIComponent(r.url.slice(i + marker.length).split('?')[0].split('#')[0]);
+  else { try { path = decodeURIComponent(new URL(r.url).pathname.replace(/^\/+/, '').split('?')[0]); } catch {} }
+  if (!path) { toast('Kon de afbeelding niet koppelen om de positie op te slaan.', 'error'); return; }
+  const value = `${r.x}% ${r.y}%`;
+  const ta = $('#editor');
+  const out = r.kind === 'obj' ? setObjPositionInSource(ta.value, path, value) : setBgDeclInSource(ta.value, path, 'background-position', value);
+  if (!out) { toast('Kon de positie niet in de bron opslaan (element niet gevonden).', 'error', 6000); return; }
+  ta.value = out;
+  state.current.content = out;
+  state.dirty = out !== state.current.original;
+  updateFileMeta();
+  updatePreview();
+  toast(`Positie aangepast naar ${value}. Publiceer om het live te zetten.`, 'success', 5000);
+}
+
+function applyZoom(z) {
+  if (!state.current) return;
+  const [owner, repo] = config.repo.split('/');
+  let path = null;
+  const marker = `/${owner}/${repo}/${config.branch}/`;
+  const i = z.url.indexOf(marker);
+  if (i >= 0) path = decodeURIComponent(z.url.slice(i + marker.length).split('?')[0].split('#')[0]);
+  else { try { path = decodeURIComponent(new URL(z.url).pathname.replace(/^\/+/, '').split('?')[0]); } catch {} }
+  if (!path) return;
+  const ta = $('#editor');
+  const out = setBgDeclInSource(ta.value, path, 'background-size', z.size);
+  if (!out) return;
+  ta.value = out;
+  state.current.content = out;
+  state.dirty = out !== state.current.original;
+  updateFileMeta();
+  // preview niet volledig herladen tijdens scrollen (dat zou de zoom-flow onderbreken); alleen bij pan/afronden
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   11. PUBLICATIE — GA4 + JSON-LD injectie + commit
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Idempotente blok-injectie via HTML-comment markers */
+function upsertBlock(html, marker, block) {
+  const start = `<!-- CMS:${marker}:START -->`, end = `<!-- CMS:${marker}:END -->`;
+  const wrapped = `${start}\n${block}\n${end}`;
+  const re = new RegExp(`${start}[\\s\\S]*?${end}`);
+  if (re.test(html)) return html.replace(re, wrapped);
+  // Injecteer vóór </head>, anders bovenaan
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${wrapped}\n</head>`);
+  return wrapped + '\n' + html;
+}
+
+function ga4Block() {
+  if (!config.ga4) return null;
+  const id = config.ga4;
+  return `<script async src="https://www.googletagmanager.com/gtag/js?id=${id}"><\/script>\n` +
+    `<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}');<\/script>`;
+}
+
+async function generateJsonLd(contentText, path) {
+  const { body } = splitFrontmatter(contentText);
+  const sys = 'Je bent een SEO-expert gespecialiseerd in gestructureerde data (Schema.org / JSON-LD).';
+  const user = `Genereer een geldig Schema.org JSON-LD object voor onderstaande webpagina-content.` +
+    ` Site-naam: "${config.siteName||''}". Site-URL: "${config.siteUrl||''}". Bestandspad: "${path}".` +
+    ` Kies het meest passende @type (bv. Article, WebPage, Service, ProfessionalService, FAQPage).` +
+    ` Antwoord UITSLUITEND met het pure JSON-LD object (met "@context":"https://schema.org"), geen uitleg.\n\nContent:\n"""\n${body.slice(0,6000)}\n"""`;
+  const raw = await Gemini.generate(user, sys);
+  const obj = Gemini.parseJson(raw);
+  return obj;
+}
+
+function openPublish() {
+  if (!state.current) return;
+  $('#pubPath').value = state.current.path;
+  $('#pubMessage').value = `Update ${state.current.path.split('/').pop()} via CMS`;
+  $('#pubStatus').style.display = 'none';
+
+  const path = state.current.path;
+  const isHtml = /\.html?$/.test(path);
+  const isMd = /\.(md|markdown)$/.test(path);
+  const opts = [];
+  if (isHtml && config.ga4) opts.push(`✓ GA4-tag <code>${escapeHtml(config.ga4)}</code> wordt in de &lt;head&gt; geïnjecteerd.`);
+  else if (isHtml) opts.push(`○ Geen GA4-ID ingesteld — geen analytics-tag.`);
+  if (config.autoJsonld && config.gemini) opts.push(`✓ JSON-LD (Schema.org) wordt via Gemini gegenereerd en ${isHtml?'in de &lt;head&gt;':'in de frontmatter'} geplaatst.`);
+  else if (config.autoJsonld && !config.gemini) opts.push(`○ JSON-LD overgeslagen — geen Gemini-sleutel.`);
+  if (!isHtml && !isMd) opts.push(`ℹ Bestand wordt ongewijzigd gecommit (geen injectie voor dit type).`);
+  if (!opts.length) opts.push('Bestand wordt gecommit naar GitHub.');
+  $('#pubOptions').innerHTML = opts.map(o=>`<div>${o}</div>`).join('');
+
+  $('#publishModal').classList.add('open');
+}
+
+async function doPublish() {
+  if (!state.current) return;
+  const path = state.current.path;
+  const message = $('#pubMessage').value.trim() || `Update ${path} via CMS`;
+  let content = $('#editor').value;
+  const status = $('#pubStatus');
+  const btn = $('#btnConfirmPublish');
+  const setStatus = (msg, cls='busy') => { status.style.display='flex'; status.className = `status-line ${cls}`; status.innerHTML = (cls==='busy'?'<span class="spinner dark"></span>':'')+escapeHtml(msg); };
+
+  btn.disabled = true;
+  const isHtml = /\.html?$/.test(path);
+  const isMd = /\.(md|markdown)$/.test(path);
+
+  try {
+    // 1. JSON-LD genereren (optioneel)
+    let jsonld = null;
+    if (config.autoJsonld && config.gemini) {
+      setStatus('JSON-LD genereren met Gemini…');
+      try { jsonld = await generateJsonLd(content, path); }
+      catch (e) { toast('JSON-LD overgeslagen: ' + e.message, 'info', 5000); }
+    }
+
+    // 2. Injecties toepassen
+    if (isHtml) {
+      const ga = ga4Block();
+      if (ga) content = upsertBlock(content, 'GA4', ga);
+      if (jsonld) content = upsertBlock(content, 'JSONLD', `<script type="application/ld+json">\n${JSON.stringify(jsonld, null, 2)}\n<\/script>`);
+    } else if (isMd && jsonld) {
+      content = upsertFrontmatterJsonLd(content, jsonld);
+    }
+
+    // 3. Commit naar GitHub
+    setStatus('Committen naar GitHub…');
+    const res = await GitHub.putFile(path, encodeBase64(content), message, state.current.sha);
+
+    // 4. State bijwerken
+    state.current.sha = res.content.sha;
+    state.current.content = content;
+    state.current.original = content;
+    state.dirty = false;
+    $('#editor').value = content;
+    updateFileMeta(); updatePreview();
+
+    setStatus('Gepubliceerd ✓', 'ok');
+    toast(`"${path}" succesvol gepubliceerd naar ${config.repo}@${config.branch}.`, 'success', 6000);
+    setTimeout(() => $('#publishModal').classList.remove('open'), 900);
+  } catch (e) {
+    setStatus(e.message, 'err');
+    toast('Publiceren mislukt: ' + e.message, 'error', 8000);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* JSON-LD als frontmatter-veld voor markdown (site-build kan dit uitlezen) */
+function upsertFrontmatterJsonLd(text, jsonld) {
+  const { fm, body, hasFm } = splitFrontmatter(text);
+  const line = `schema_jsonld: '${JSON.stringify(jsonld).replace(/'/g,"''")}'`;
+  if (hasFm) {
+    const cleaned = fm.split('\n').filter(l => !/^schema_jsonld:/.test(l.trim())).join('\n').trim();
+    return `---\n${cleaned}\n${line}\n---\n\n${body}`;
+  }
+  return `---\n${line}\n---\n\n${text}`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   12. SETTINGS MODAL
+   ═══════════════════════════════════════════════════════════════════════════ */
+function openSettings(tab) {
+  // Vul velden
+  $('#cfgPat').value = config.pat;
+  $('#cfgRepo').value = config.repo;
+  $('#cfgBranch').value = config.branch;
+  $('#cfgImgDir').value = config.imgDir;
+  $('#cfgGemini').value = config.gemini;
+  $('#cfgModel').value = config.model;
+  $('#cfgSysPrompt').value = config.sysPrompt;
+  $('#cfgGa4').value = config.ga4;
+  $('#cfgAutoJsonld').checked = config.autoJsonld;
+  $('#cfgSiteName').value = config.siteName;
+  $('#cfgSiteUrl').value = config.siteUrl;
+  $('#ghStatus').innerHTML = ''; $('#aiStatus').innerHTML = '';
+  if (tab) switchSettingsTab(tab);
+  $('#settingsModal').classList.add('open');
+}
+function switchSettingsTab(tab) {
+  $$('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  $$('.modal-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === tab));
+}
+function readSettingsForm() {
+  config.pat = $('#cfgPat').value.trim();
+  config.repo = $('#cfgRepo').value.trim().replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/\/+$/,'');
+  config.branch = $('#cfgBranch').value.trim() || 'main';
+  config.imgDir = $('#cfgImgDir').value.trim() || 'images';
+  config.gemini = $('#cfgGemini').value.trim();
+  config.model = $('#cfgModel').value;
+  config.sysPrompt = $('#cfgSysPrompt').value;
+  config.ga4 = $('#cfgGa4').value.trim();
+  config.autoJsonld = $('#cfgAutoJsonld').checked;
+  config.siteName = $('#cfgSiteName').value.trim();
+  config.siteUrl = $('#cfgSiteUrl').value.trim();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   13. UI STATUS / TOPBAR
+   ═══════════════════════════════════════════════════════════════════════════ */
+function refreshTopbar() {
+  const pill = $('#repoPill'), label = $('#repoLabel');
+  const bt = $('#brandTitle'), bm = $('#brandMark');
+  if (bt) bt.textContent = config.siteName || 'Stateless CMS';
+  if (bm) bm.textContent = (config.siteName || '◆').trim().charAt(0).toUpperCase() || '◆';
+  if (isConfigured()) {
+    pill.classList.add('connected');
+    label.textContent = `${config.repo} @ ${config.branch}`;
+  } else {
+    pill.classList.remove('connected');
+    label.textContent = 'niet verbonden';
+  }
+  updateButtons();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   14. EVENT WIRING
+   ═══════════════════════════════════════════════════════════════════════════ */
+// Topbar
+$('#btnSettings').onclick = () => openSettings();
+$('#btnImages').onclick = () => openImagesManager();
+$('#btnCloseImages').onclick = $('#btnCloseImages2').onclick = () => $('#imagesModal').classList.remove('open');
+$('#btnRefresh').onclick = () => loadTree();
+$('#btnReloadTree').onclick = () => loadTree();
+$('#btnPublish').onclick = () => openPublish();
+$('#btnNewFile').onclick = () => { $('#newFilePath').value=''; $('#newFileModal').classList.add('open'); $('#newFilePath').focus(); };
+
+// Filter
+$('#fileFilter').addEventListener('input', () => renderTree());
+
+// View tabs
+$$('.view-tab').forEach(t => t.onclick = () => setView(t.dataset.view));
+
+// Klik-om-te-bewerken toggle
+$('#btnEditMode').onclick = () => {
+  state.editMode = !state.editMode;
+  $('#btnEditMode').classList.toggle('active', state.editMode);
+  if (state.editMode && state.view === 'edit') setView('split');
+  if (!state.editMode) clearSelection();
+  updatePreview();
+  toast(state.editMode
+    ? 'Klik-bewerken aan: klik een tekst in de preview om te bewerken of AI te vragen.'
+    : 'Klik-bewerken uit.', 'info', 3500);
+};
+
+// Co-pilot
+$('#btnAskAI').onclick = askAI;
+$('#btnApplyAI').onclick = applyAI;
+
+// Settings modal
+$('#btnCloseSettings').onclick = () => $('#settingsModal').classList.remove('open');
+$$('.modal-tab').forEach(t => t.onclick = () => switchSettingsTab(t.dataset.tab));
+$$('.pw-toggle').forEach(b => b.onclick = () => {
+  const inp = $('#'+b.dataset.target);
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  b.textContent = show ? 'verberg' : 'tonen';
+});
+$('#btnSaveSettings').onclick = () => {
+  readSettingsForm();
+  saveConfig();
+  refreshTopbar();
+  $('#settingsModal').classList.remove('open');
+  toast('Instellingen opgeslagen.', 'success');
+  if (isConfigured() && !state.tree.length) loadTree();
+};
+$('#btnTestConn').onclick = async () => {
+  readSettingsForm();
+  const gh = $('#ghStatus'), ai = $('#aiStatus');
+  gh.className = 'status-line busy'; gh.innerHTML = '<span class="spinner dark"></span> GitHub testen…';
+  try {
+    const repo = await GitHub.testConnection();
+    gh.className = 'status-line ok'; gh.innerHTML = `✓ Verbonden met ${escapeHtml(repo.full_name)} (default branch: ${escapeHtml(repo.default_branch)})`;
+  } catch (e) { gh.className='status-line err'; gh.innerHTML = '✕ ' + escapeHtml(e.message); }
+
+  if (config.gemini) {
+    ai.className='status-line busy'; ai.innerHTML = '<span class="spinner dark"></span> Gemini testen…';
+    try {
+      await Gemini.generate('Antwoord met JSON: {"ok":true}', 'Testverbinding.', {type:'object',properties:{ok:{type:'boolean'}},required:['ok']});
+      ai.className='status-line ok'; ai.innerHTML = '✓ Gemini-sleutel werkt.';
+    } catch(e) { ai.className='status-line err'; ai.innerHTML = '✕ ' + escapeHtml(e.message); }
+  }
+};
+
+// New file modal
+$('#btnCloseNewFile').onclick = $('#btnCancelNewFile').onclick = () => $('#newFileModal').classList.remove('open');
+$('#btnCreateFile').onclick = () => {
+  const path = $('#newFilePath').value.trim().replace(/^\/+/,'');
+  if (!path) { toast('Vul een pad in.', 'error'); return; }
+  if (state.tree.some(t => t.path === path)) { toast('Bestand bestaat al — open het uit de lijst.', 'error'); return; }
+  // Nieuw (nog niet bestaand) bestand in de editor openen; commit gebeurt bij publiceren
+  const starter = path.endsWith('.md') || path.endsWith('.markdown')
+    ? `---\ntitle: Nieuwe pagina\ndate: ${new Date().toISOString().slice(0,10)}\n---\n\n# Nieuwe pagina\n\nBegin hier met schrijven…\n`
+    : path.endsWith('.json') ? `{\n  \n}\n` : '';
+  state.current = { path, sha: null, content: starter, original: ' new', size: 0 };
+  state.dirty = true; state.aiSuggestion = null; resetCopilot();
+  $('#editor').value = starter;
+  $('#editorPlaceholder').style.display='none';
+  $('#editorBar').style.display='flex';
+  $('#curPath').textContent = path + ' (nieuw)';
+  updateFileMeta(); updateFrontmatterNote();
+  setView(path.endsWith('.md')?'split':'edit'); updatePreview();
+  updateButtons();
+  $('#newFileModal').classList.remove('open');
+  toast('Nieuw bestand aangemaakt — publiceer om te committen.', 'info', 5000);
+};
+
+// Publish modal
+$('#btnClosePublish').onclick = $('#btnCancelPublish').onclick = () => $('#publishModal').classList.remove('open');
+$('#btnConfirmPublish').onclick = doPublish;
+
+// Image button + drag/drop
+$('#btnImage').onclick = () => {
+  const inp = el('input', { type:'file', accept:'image/*' });
+  inp.style.cssText = 'position:fixed;left:-9999px;opacity:0';
+  inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; inp.remove(); if (f) handleImageFile(f); });
+  document.body.append(inp); inp.click();
+};
+const body = $('#editorBody');
+['dragenter','dragover'].forEach(ev => body.addEventListener(ev, e => { e.preventDefault(); if ([...e.dataTransfer.types].includes('Files')) body.classList.add('dragover'); }));
+['dragleave','drop'].forEach(ev => body.addEventListener(ev, e => { e.preventDefault(); if (ev==='drop' || e.target===body) body.classList.remove('dragover'); }));
+body.addEventListener('drop', e => {
+  body.classList.remove('dragover');
+  const files = [...(e.dataTransfer.files||[])].filter(f => f.type.startsWith('image/'));
+  if (!files.length) { toast('Sleep een afbeeldingsbestand.', 'error'); return; }
+  if (!state.current) { toast('Open eerst een bestand om de link in te voegen.', 'error'); return; }
+  files.forEach(handleImageFile);
+});
+
+// Sluit modals bij klik op achtergrond
+$$('.modal-backdrop').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); }));
+// Escape sluit modals
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') $$('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
+  // Ctrl/Cmd+S = publiceren
+  if ((e.ctrlKey||e.metaKey) && e.key === 's') { e.preventDefault(); if (state.current) openPublish(); }
+});
+
+// Navigatie vanuit de HTML-preview: klik op een interne link opent die pagina in de CMS
+window.addEventListener('message', e => {
+  const d = e.data;
+  if (!d) return;
+  if (d.__cmsZoom) { applyZoom(d.__cmsZoom); return; }
+  if (d.__cmsReposition) { applyReposition(d.__cmsReposition); return; }
+  if (d.__cmsImage) { replaceImageFromPreview(String(d.__cmsImage)); return; }
+  if (d.__cmsEdit) { selectSnippet(String(d.__cmsEdit)); return; }
+  if (!d.__cmsNav) return;
+  let href = String(d.__cmsNav).split('#')[0].split('?')[0];
+  const cur = state.current ? state.current.path : '';
+  const dir = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/') + 1) : '';
+  let raw = href.startsWith('/') ? href.slice(1) : (dir + href);
+  const parts = [];
+  raw.split('/').forEach(p => { if (p === '..') parts.pop(); else if (p !== '.' && p !== '') parts.push(p); });
+  const target = parts.join('/');
+  if (state.tree.some(t => t.path === target && t.type === 'blob')) openFile(target);
+  else toast(`Pagina "${target}" niet gevonden in de repo.`, 'info');
+});
+
+// Waarschuw bij verlaten met niet-opgeslagen wijzigingen
+window.addEventListener('beforeunload', e => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   15. INIT
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function init() {
+  refreshTopbar();
+  if (isConfigured()) {
+    await loadSiteConfig();   // site-instellingen uit cms.config.json van de doel-repo
+    refreshTopbar();
+    loadTree();
+  } else {
+    setTimeout(() => openSettings('github'), 400);
+  }
+}
+init();
+</script>
+</body>
+</html>
