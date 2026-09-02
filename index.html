@@ -440,6 +440,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
     <div class="topbar-actions">
       <button class="btn-icon" id="btnRefresh" title="Bestandsboom vernieuwen">⟳</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
+      <button class="btn btn-ghost" id="btnThemeBuilder" title="Design & site.json visueel bewerken">🎨 Theme Builder</button>
       <button class="btn btn-ghost" id="btnBake" title="Alle pagina's omzetten naar platte, self-contained HTML">🧱 Platte HTML</button>
       <button class="btn btn-ghost" id="btnSettings">⚙ Instellingen</button>
       <button class="btn btn-cta" id="btnPublish" disabled>↑ Opslaan &amp; Publiceer</button>
@@ -2078,23 +2079,6 @@ async function loadSiteJsonForBake() {
   try { return JSON.parse(decodeBase64((await GitHub.getFile('site.json')).content)); }
   catch (e) { return {}; }
 }
-function bakePage(html, page, cssText, cfg, T) {
-  const email = (cfg.footer && cfg.footer.contact && cfg.footer.contact.email) || '';
-  const BEH = '<script>window.__contactEmail=' + JSON.stringify(email) + ';(' + T.wireBehaviour.toString() + ')();<\/script>';
-  const reBlock = k => new RegExp('<!-- CMS:' + k + ':START -->[\\s\\S]*?<!-- CMS:' + k + ':END -->');
-  const ensure = (h, key, inner, fbIns) => {
-    const b = '<!-- CMS:' + key + ':START -->\n' + inner + '\n<!-- CMS:' + key + ':END -->';
-    return reBlock(key).test(h) ? h.replace(reBlock(key), b) : fbIns(h, b);
-  };
-  html = ensure(html, 'THEMECSS', '<style>\n' + cssText + '\n</style>', (h, b) =>
-    /<link[^>]+theme\.css[^>]*>/.test(h) ? h.replace(/<link[^>]+theme\.css[^>]*>/, b) : h.replace('</head>', b + '\n</head>'));
-  html = html.replace(/\s*<script[^>]+theme\.js[^>]*><\/script>/g, '');
-  const headerHTML = T.headerOuterHTML(cfg, page).replace(/ onerror="[^"]*"/g, '');
-  html = ensure(html, 'HEADER', headerHTML, (h, b) => h.replace(/<main\b/, b + '\n<main'));
-  const chrome = (T.footerOuterHTML(cfg) + '\n' + T.waOuterHTML(cfg)).replace(/ onerror="[^"]*"/g, '') + '\n' + BEH;
-  html = ensure(html, 'CHROME', chrome, (h, b) => h.replace(/<\/main>/, '</main>\n' + b));
-  return html;
-}
 async function bakeAllPages() {
   if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
   if (!config.themeBase) { toast('Stel eerst "themeBase" in (cms.config.json).', 'error'); return; }
@@ -2112,7 +2096,7 @@ async function bakeAllPages() {
       const f = await GitHub.getFile(path);
       const src = decodeBase64(f.content);
       if (!/<main/i.test(src)) { skipped++; continue; }
-      const out = bakePage(src, path.split('/').pop(), cssText, cfg, T);
+      const out = T.bakePage(src, path.split('/').pop(), cssText, cfg);
       if (/vanderburg-theme|theme\.css|theme\.js/.test(out) || !/CMS:HEADER:START/.test(out)) {
         toast('Sanity faalde, overgeslagen: ' + path, 'error', 5000); skipped++; continue;
       }
@@ -2133,6 +2117,10 @@ async function bakeAllPages() {
 $('#btnSettings').onclick = () => openSettings();
 $('#btnImages').onclick = () => openImagesManager();
 $('#btnBake').onclick = () => bakeAllPages();
+$('#btnThemeBuilder').onclick = () => {
+  const url = 'theme-builder.html' + (config.repo ? '?repo=' + encodeURIComponent(config.repo) : '');
+  window.open(url, '_blank');
+};
 $('#btnCloseImages').onclick = $('#btnCloseImages2').onclick = () => $('#imagesModal').classList.remove('open');
 $('#btnRefresh').onclick = () => loadTree();
 $('#btnReloadTree').onclick = () => loadTree();
