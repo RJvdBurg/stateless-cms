@@ -34,6 +34,7 @@ https://rjvdburg.github.io/stateless-cms/?repo=OWNER/REPO
 
 | Button | Does |
 |--------|------|
+| ➕ **Nieuwe site** | Wizard: create a new repo + theme (clone the neutral `starter-theme` or reuse one), scaffold the site and enable Pages |
 | 🖼 **Afbeeldingen** | Image manager — lists repo images, optimises (resize + WebP/quality) and replaces them |
 | 🎨 **Theme Builder** | Opens `theme-builder.html` — visually edit `site.json` + the theme's colours/fonts with a live preview, then save & bake |
 | 🧱 **Platte HTML** | Bakes every page into flat, self-contained HTML (see below) |
@@ -60,6 +61,14 @@ The chrome is defined once in `theme.js` (pure builders `window.Theme.headerOute
 The token needs **Contents: Read & Write** on the target site repo (and, to save theme colours
 from the Theme Builder, on the theme repo too). Fine-grained PAT.
 
+## Starting a new site
+
+The **➕ Nieuwe site** wizard creates a fresh website end-to-end: it makes a new content repo, either clones the neutral [`starter-theme`](https://github.com/RJvdBurg/starter-theme) into a new theme repo or reuses an existing theme, scaffolds `cms.config.json` + `site.json` + flat starter pages + a placeholder logo, enables GitHub Pages, and opens the new site in the CMS.
+
+> **Token note:** creating repos needs a token that is allowed to create repositories — a classic PAT with `repo` scope, or a fine-grained token with account-level repo-creation. A fine-grained PAT scoped only to existing repos cannot create new ones; the wizard reports this clearly.
+
 ## Files
 - `index.html` — the CMS engine
 - `theme-builder.html` — the visual theme / `site.json` editor
+
+Related repos: [`starter-theme`](https://github.com/RJvdBurg/starter-theme) (neutral base cloned by the wizard).
