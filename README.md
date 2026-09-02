@@ -35,6 +35,7 @@ https://rjvdburg.github.io/stateless-cms/?repo=OWNER/REPO
 | Button | Does |
 |--------|------|
 | ➕ **Nieuwe site** | Wizard: create a new repo + theme (clone the neutral `starter-theme` or reuse one), scaffold the site and enable Pages |
+| 📄 **Nieuwe pagina** | Create a page; optionally add it to the menu (top-level or under a dropdown) — the menu is re-baked into every page |
 | 🖼 **Afbeeldingen** | Image manager — lists repo images, optimises (resize + WebP/quality) and replaces them |
 | 🎨 **Theme Builder** | Opens `theme-builder.html` — visually edit `site.json` + the theme's colours/fonts with a live preview, then save & bake |
 | 🧱 **Platte HTML** | Bakes every page into flat, self-contained HTML (see below) |
