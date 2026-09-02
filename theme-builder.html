@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Theme Builder — Stateless CMS</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  :root{--pri:#3E2E6D;--pink:#f7588e;--bg:#f6f6f9;--card:#fff;--bd:#e6e6ef;--n5:#7a7a86;--n7:#3a3a44}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--n7)}
+  header.tb{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:10}
+  header.tb .title{font-weight:700;color:var(--pri)}
+  header.tb .sp{flex:1}
+  .btn{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer;color:var(--n7)}
+  .btn:hover{border-color:#c9c9d6}
+  .btn.pri{background:var(--pri);color:#fff;border-color:var(--pri)}
+  .btn.pink{background:var(--pink);color:#fff;border-color:var(--pink)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .wrap{display:grid;grid-template-columns:minmax(380px,460px) 1fr;gap:0;height:calc(100vh - 53px)}
+  .panel{overflow:auto;padding:16px}
+  .panel.form{border-right:1px solid var(--bd);background:#fafafd}
+  .panel.prev{background:#eef0f4;padding:0;display:flex;flex-direction:column}
+  .prevbar{padding:8px 12px;font-size:12px;color:var(--n5);border-bottom:1px solid var(--bd);background:#fff;display:flex;gap:10px;align-items:center}
+  iframe#pv{flex:1;border:0;width:100%;background:#fff}
+  fieldset{border:1px solid var(--bd);border-radius:10px;margin:0 0 14px;padding:12px 14px;background:var(--card)}
+  legend{font-weight:700;font-size:13px;color:var(--pri);padding:0 6px}
+  label.f{display:block;font-size:12px;color:var(--n5);margin:8px 0 3px}
+  input[type=text],input[type=url],textarea,select{width:100%;padding:7px 9px;border:1px solid var(--bd);border-radius:7px;font-size:13px;font-family:inherit}
+  textarea{resize:vertical;min-height:52px}
+  .row{display:flex;gap:8px;align-items:center;margin:6px 0}
+  .row input{flex:1}
+  .row .grip{color:#bbb;font-size:12px}
+  .mini{border:none;background:#f0f0f5;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:14px;color:#666;flex:0 0 auto}
+  .mini:hover{background:#e5e5ee}
+  .colorrow{display:flex;gap:8px;align-items:center;margin:6px 0}
+  .colorrow input[type=color]{width:38px;height:30px;border:1px solid var(--bd);border-radius:6px;padding:0;background:#fff}
+  .colorrow .lbl{flex:1;font-size:13px}
+  .colorrow input[type=text]{width:96px;flex:0 0 auto}
+  .sub{margin:6px 0 6px 18px;padding-left:10px;border-left:2px solid #eee}
+  .hint{font-size:11px;color:#9a9aa6;margin-top:4px}
+  .status{font-size:12px;padding:6px 10px;border-radius:7px;margin-left:8px}
+  .status.ok{background:#e7f7ee;color:#1a7f43}.status.err{background:#fdecec;color:#c0392b}.status.info{background:#eef;color:#3a3a8a}
+  .addbtn{font-size:12px;color:var(--pri);background:none;border:1px dashed #ccc;border-radius:7px;padding:5px 9px;cursor:pointer;margin-top:4px}
+  .grp{font-size:12px;color:#888;margin:8px 0 2px;font-weight:600}
+  .overlay{position:fixed;inset:0;background:rgba(20,20,30,.45);display:none;align-items:center;justify-content:center;z-index:50}
+  .overlay.on{display:flex}
+  .modal{background:#fff;border-radius:12px;padding:22px 24px;max-width:440px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal h3{margin:0 0 8px;color:var(--pri)}
+  .modal input{margin:8px 0}
+</style>
+</head>
+<body>
+<header class="tb">
+  <span class="title">🎨 Theme Builder</span>
+  <span id="repoLbl" style="font-size:12px;color:#888"></span>
+  <span class="sp"></span>
+  <span id="status"></span>
+  <button class="btn" id="btnSaveSite">💾 Bewaar site.json</button>
+  <button class="btn" id="btnSaveTheme">🎨 Bewaar theme</button>
+  <button class="btn pink" id="btnBake">🧱 Bak &amp; publiceer</button>
+  <button class="btn" id="btnBack" title="Sluiten">✕</button>
+</header>
+
+<div class="wrap">
+  <div class="panel form" id="form"><p style="color:#888">Laden…</p></div>
+  <div class="panel prev">
+    <div class="prevbar">Live preview <span id="pvnote" style="color:#bbb"></span></div>
+    <iframe id="pv" title="preview"></iframe>
+  </div>
+</div>
+
+<div class="overlay" id="patOverlay">
+  <div class="modal">
+    <h3>GitHub-token nodig</h3>
+    <p style="font-size:13px;color:#555">Deze Theme Builder deelt je token met de CMS. Vul je fine-grained PAT in (blijft lokaal in je browser).</p>
+    <input type="text" id="patInput" placeholder="github_pat_…" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:8px">
+    <div style="text-align:right;margin-top:10px"><button class="btn pri" id="patSave">Opslaan</button></div>
+  </div>
+</div>
+
+<script>
+/* ── Config (gedeeld met de CMS via dezelfde localStorage-sleutel) ────────── */
+const CFG_KEY='scms_config_v1', OLD='vdb_cms_config_v1';
+function loadCfg(){ try{ return JSON.parse(localStorage.getItem(CFG_KEY)||localStorage.getItem(OLD)||'{}'); }catch{ return {}; } }
+function saveCfg(c){ localStorage.setItem(CFG_KEY, JSON.stringify(c)); }
+let cfg = loadCfg();
+const q = new URLSearchParams(location.search);
+if(q.get('repo')) cfg.repo = q.get('repo').replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/\/+$/,'');
+const REPO = cfg.repo || '';
+const BRANCH = cfg.branch || 'main';
+
+/* ── Base64 UTF-8 ─────────────────────────────────────────────────────────── */
+function enc(str){const b=new TextEncoder().encode(str);let s='';const c=0x8000;for(let i=0;i<b.length;i+=c)s+=String.fromCharCode.apply(null,b.subarray(i,i+c));return btoa(s);}
+function dec(b64){const bin=atob((b64||'').replace(/\s/g,''));const b=Uint8Array.from(bin,c=>c.charCodeAt(0));return new TextDecoder('utf-8').decode(b);}
+
+/* ── GitHub ───────────────────────────────────────────────────────────────── */
+async function gh(path,opts={}){
+  const res=await fetch('https://api.github.com'+path,{...opts,headers:{'Authorization':`Bearer ${cfg.pat}`,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(opts.headers||{})}});
+  if(!res.ok){let m='';try{m=(await res.json()).message||'';}catch{}throw new Error(`GitHub ${res.status}: ${m||res.statusText}`);}
+  return res.status===204?null:res.json();
+}
+async function getFile(repo,path){ const d=await gh(`/repos/${repo}/contents/${path}?ref=${BRANCH}`); return {text:dec(d.content),sha:d.sha}; }
+async function putFile(repo,path,text,msg,sha){ const body={message:msg,content:enc(text),branch:BRANCH};if(sha)body.sha=sha; return gh(`/repos/${repo}/contents/${path}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+
+/* ── Afgeleide URLs ───────────────────────────────────────────────────────── */
+function ownerRepo(){ const [o,r]=REPO.split('/'); return {o,r}; }
+function sitePagesBase(){ const {o,r}=ownerRepo(); return `https://${o.toLowerCase()}.github.io/${r}/`; }
+function themeRepoFrom(base){ try{ const u=new URL(base); const owner=u.hostname.split('.')[0]; const repo=u.pathname.replace(/^\/|\/$/g,'').split('/')[0]; return `${owner}/${repo}`; }catch{ return ''; } }
+
+/* ── State ────────────────────────────────────────────────────────────────── */
+let T=null;                 // window.Theme
+let site={};                // site.json model
+let siteSha=null;
+let themeCss='';            // volledige theme.css tekst
+let themeSha=null;
+let themeBase='';
+let themeRepo='';
+let tokens={};              // {purple,pink,teal,g0,g1,g2,fdisplay,fbody,maxw}
+
+const $=s=>document.querySelector(s);
+function setStatus(msg,type='info'){const e=$('#status');e.className='status '+type;e.textContent=msg;if(type==='ok')setTimeout(()=>{if(e.textContent===msg)e.textContent='';},4000);}
+
+/* ── Theme.js als lib laden ───────────────────────────────────────────────── */
+function loadThemeLib(base){return new Promise((res,rej)=>{window.THEME_LIB_ONLY=true;const s=document.createElement('script');s.src=base.replace(/\/?$/,'/')+'theme.js';s.onload=()=>res(window.Theme);s.onerror=()=>rej(new Error('theme.js laden mislukt'));document.head.appendChild(s);});}
+
+/* ── theme.css tokens parsen / toepassen ──────────────────────────────────── */
+function tok(css,name){const m=css.match(new RegExp('--'+name+':\\s*([^;]+);'));return m?m[1].trim():'';}
+function gradStops(css){const g=tok(css,'grad');const hex=g.match(/#[0-9a-fA-F]{3,8}/g)||['#f7588e','#7b5ea7','#4ab9d8'];return hex;}
+function hexToRgba(hex,a){let h=hex.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}
+function parseTokens(css){const g=gradStops(css);return{purple:tok(css,'purple')||'#3E2E6D',pink:tok(css,'pink')||'#f7588e',teal:tok(css,'teal')||'#4ab9d8',g0:g[0],g1:g[1]||'#7b5ea7',g2:g[2]||g[1]||'#4ab9d8',fdisplay:tok(css,'fdisplay'),fbody:tok(css,'fbody'),maxw:tok(css,'maxw')};}
+function applyTokens(css,t){
+  css=css.replace(/--purple:\s*[^;]+;/,'--purple:'+t.purple+';');
+  css=css.replace(/--pink:\s*[^;]+;/,'--pink:'+t.pink+';');
+  css=css.replace(/--teal:\s*[^;]+;/,'--teal:'+t.teal+';');
+  css=css.replace(/--grad:\s*[^;]+;/,'--grad:linear-gradient(135deg,'+t.g0+' 0%,'+t.g1+' 45%,'+t.g2+' 100%);');
+  css=css.replace(/--grad-soft:\s*[^;]+;/,'--grad-soft:linear-gradient(135deg,'+hexToRgba(t.g0,.10)+','+hexToRgba(t.g1,.10)+' 45%,'+hexToRgba(t.g2,.10)+');');
+  if(t.fdisplay)css=css.replace(/--fdisplay:\s*[^;]+;/,'--fdisplay:'+t.fdisplay+';');
+  if(t.fbody)css=css.replace(/--fbody:\s*[^;]+;/,'--fbody:'+t.fbody+';');
+  if(t.maxw)css=css.replace(/--maxw:\s*[^;]+;/,'--maxw:'+t.maxw+';');
+  return css;
+}
+
+/* ── Live preview ─────────────────────────────────────────────────────────── */
+function renderPreview(){
+  if(!T)return;
+  const cfgm=Object.assign({},T.DEFAULTS,site);
+  const css=applyTokens(themeCss,tokens);
+  const header=T.headerOuterHTML(cfgm,'index.html').replace(/ onerror="[^"]*"/g,'');
+  const footer=T.footerOuterHTML(cfgm);
+  const wa=T.waOuterHTML(cfgm);
+  const sample=`<main>
+    <section class="hero-bg" style="background:var(--grad-soft);min-height:340px">
+      <div class="hero-bg-inner container"><div class="hero-bg-text">
+        <span class="label" style="color:var(--pink);font-weight:700;letter-spacing:.1em">VOORBEELD</span>
+        <h1 style="font-family:var(--fdisplay);color:var(--purple);font-size:2.4rem;margin:.4rem 0">Voorbeeldkop <span class="grad-text">met accent</span></h1>
+        <p class="lead">Zo ziet je huisstijl eruit. Pas kleuren, lettertype, menu en footer links aan.</p>
+        <a class="btn btn-cta" style="display:inline-block;margin-top:1rem">Knop</a>
+      </div></div>
+    </section>
+    <section class="section"><div class="container">
+      <div class="stat-grid"><div><div class="stat-num" style="font-family:var(--fdisplay);color:var(--purple);font-size:2.2rem">300+</div><div>mensen</div></div>
+      <div><div class="stat-num" style="font-family:var(--fdisplay);color:var(--purple);font-size:2.2rem">4.9</div><div>score</div></div>
+      <div><div class="stat-num" style="font-family:var(--fdisplay);color:var(--purple);font-size:2.2rem">2500</div><div>uur</div></div></div>
+    </div></section>
+  </main>`;
+  const doc=`<!DOCTYPE html><html><head><base href="${sitePagesBase()}"><style>${css}</style></head><body>${header}${sample}${footer}${wa}</body></html>`;
+  $('#pv').srcdoc=doc;
+}
+let pvTimer=null;
+function schedulePreview(){clearTimeout(pvTimer);pvTimer=setTimeout(renderPreview,180);}
+
+/* ── Formulier-helpers ────────────────────────────────────────────────────── */
+function el(tag,attrs,...kids){const e=document.createElement(tag);for(const k in (attrs||{})){if(k==='class')e.className=attrs[k];else if(k==='html')e.innerHTML=attrs[k];else if(k.startsWith('on'))e.addEventListener(k.slice(2),attrs[k]);else e.setAttribute(k,attrs[k]);}for(const c of kids){if(c==null)continue;e.append(c.nodeType?c:document.createTextNode(c));}return e;}
+function input(val,on,ph){const i=el('input',{type:'text'});i.value=val==null?'':val;if(ph)i.placeholder=ph;i.addEventListener('input',()=>{on(i.value);schedulePreview();});return i;}
+function textarea(val,on){const t=el('textarea');t.value=val==null?'':val;t.addEventListener('input',()=>{on(t.value);schedulePreview();});return t;}
+function field(lbl,node){return el('div',{},el('label',{class:'f'},lbl),node);}
+function miniBtn(txt,on){return el('button',{class:'mini',onclick:on},txt);}
+
+/* Herhaalbare rij-editor voor arrays van objecten */
+function listEditor(arr,cols,mk){
+  const wrap=el('div',{});
+  function redraw(){
+    wrap.innerHTML='';
+    arr.forEach((item,idx)=>{
+      const row=el('div',{class:'row'});
+      cols.forEach(c=>{
+        const i=input(item[c.key],v=>{item[c.key]=v;},c.ph);
+        if(c.w)i.style.flex='0 0 '+c.w;
+        row.append(i);
+      });
+      row.append(miniBtn('▲',()=>{if(idx>0){arr.splice(idx-1,0,arr.splice(idx,1)[0]);redraw();schedulePreview();}}));
+      row.append(miniBtn('✕',()=>{arr.splice(idx,1);redraw();schedulePreview();}));
+      wrap.append(row);
+      if(mk)mk(item,wrap);
+    });
+    const add=el('button',{class:'addbtn',onclick:()=>{const o={};cols.forEach(c=>o[c.key]='');arr.push(o);redraw();schedulePreview();}},'+ toevoegen');
+    wrap.append(add);
+  }
+  redraw();
+  return wrap;
+}
+
+/* ── Formulier opbouwen ───────────────────────────────────────────────────── */
+function buildForm(){
+  const f=$('#form');f.innerHTML='';
+  site.cta=site.cta||{};site.footer=site.footer||{};site.footer.contact=site.footer.contact||{};
+  site.whatsapp=site.whatsapp||{};site.nav=site.nav||[];site.social=site.social||[];site.footer.columns=site.footer.columns||[];
+
+  // Merk & logo
+  const fsBrand=el('fieldset',{},el('legend',{},'Merk & logo'));
+  fsBrand.append(field('Merknaam',input(site.brand,v=>site.brand=v)));
+  fsBrand.append(field('Logo (pad in site-repo)',input(site.logo,v=>site.logo=v,'assets/logo.svg')));
+  fsBrand.append(field('Logo wit (footer)',input(site.logoWhite,v=>site.logoWhite=v,'assets/logo-white.svg')));
+  fsBrand.append(field('Logo alt-tekst',input(site.logoAlt,v=>site.logoAlt=v)));
+  fsBrand.append(el('div',{class:'hint'},'Assets staan in de site-repo. Upload nieuwe logo\'s via de CMS (Afbeeldingen) of commit ze in assets/.'));
+  f.append(fsBrand);
+
+  // Kleuren & fonts
+  const fsCol=el('fieldset',{},el('legend',{},'Kleuren & lettertypen'));
+  function colorRow(lbl,key){
+    const cr=el('div',{class:'colorrow'});
+    const cp=el('input',{type:'color'});cp.value=/^#([0-9a-f]{6})$/i.test(tokens[key])?tokens[key]:'#000000';
+    const tx=el('input',{type:'text'});tx.value=tokens[key]||'';
+    cp.addEventListener('input',()=>{tokens[key]=cp.value;tx.value=cp.value;schedulePreview();});
+    tx.addEventListener('input',()=>{tokens[key]=tx.value;if(/^#([0-9a-f]{6})$/i.test(tx.value))cp.value=tx.value;schedulePreview();});
+    cr.append(cp,el('span',{class:'lbl'},lbl),tx);return cr;
+  }
+  fsCol.append(el('div',{class:'grp'},'Hoofdkleuren'));
+  fsCol.append(colorRow('Primair (paars)','purple'));
+  fsCol.append(colorRow('Accent (roze)','pink'));
+  fsCol.append(colorRow('Secundair (teal)','teal'));
+  fsCol.append(el('div',{class:'grp'},'Gradient (3 stops)'));
+  fsCol.append(colorRow('Stop 1','g0'));
+  fsCol.append(colorRow('Stop 2 (midden)','g1'));
+  fsCol.append(colorRow('Stop 3','g2'));
+  fsCol.append(el('div',{class:'grp'},'Lettertypen (CSS font-family)'));
+  fsCol.append(field('Koppen (display)',input(tokens.fdisplay,v=>{tokens.fdisplay=v;})));
+  fsCol.append(field('Tekst (body)',input(tokens.fbody,v=>{tokens.fbody=v;})));
+  fsCol.append(field('Max. site-breedte',input(tokens.maxw,v=>{tokens.maxw=v;},'1140px')));
+  fsCol.append(el('div',{class:'hint'},'Kleuren/fonts worden opgeslagen in theme.css (theme-repo). Nieuwe fonts moeten in theme.css ge-@import worden.'));
+  f.append(fsCol);
+
+  // CTA
+  const fsCta=el('fieldset',{},el('legend',{},'Actieknop (CTA)'));
+  fsCta.append(field('Label',input(site.cta.label,v=>site.cta.label=v)));
+  fsCta.append(field('Link',input(site.cta.href,v=>site.cta.href=v,'contact.html')));
+  f.append(fsCta);
+
+  // Menu
+  const fsNav=el('fieldset',{},el('legend',{},'Menu'));
+  const navWrap=el('div',{});
+  function drawNav(){
+    navWrap.innerHTML='';
+    site.nav.forEach((it,idx)=>{
+      const row=el('div',{class:'row'});
+      row.append(input(it.label,v=>{it.label=v;},'Label'));
+      const hr=input(it.href,v=>{it.href=v;},'pagina.html');hr.style.flex='0 0 130px';row.append(hr);
+      const subBtn=el('button',{class:'mini',title:'Submenu aan/uit',onclick:()=>{if(it.sub)delete it.sub;else it.sub=[];drawNav();schedulePreview();}},it.sub?'▼':'＋');
+      row.append(subBtn);
+      row.append(miniBtn('▲',()=>{if(idx>0){site.nav.splice(idx-1,0,site.nav.splice(idx,1)[0]);drawNav();schedulePreview();}}));
+      row.append(miniBtn('✕',()=>{site.nav.splice(idx,1);drawNav();schedulePreview();}));
+      navWrap.append(row);
+      if(it.sub){
+        const sub=el('div',{class:'sub'});
+        it.sub.forEach((s,j)=>{
+          const sr=el('div',{class:'row'});
+          sr.append(input(s.label,v=>{s.label=v;},'Sub-label'));
+          const shr=input(s.href,v=>{s.href=v;},'pagina.html');shr.style.flex='0 0 130px';sr.append(shr);
+          sr.append(miniBtn('✕',()=>{it.sub.splice(j,1);drawNav();schedulePreview();}));
+          sub.append(sr);
+        });
+        sub.append(el('button',{class:'addbtn',onclick:()=>{it.sub.push({label:'',href:''});drawNav();schedulePreview();}},'+ submenu-item'));
+        navWrap.append(sub);
+      }
+    });
+    navWrap.append(el('button',{class:'addbtn',onclick:()=>{site.nav.push({label:'',href:''});drawNav();schedulePreview();}},'+ menu-item'));
+  }
+  drawNav();fsNav.append(navWrap);f.append(fsNav);
+
+  // Footer
+  const fsFoot=el('fieldset',{},el('legend',{},'Footer'));
+  fsFoot.append(field('Tagline',textarea(site.footer.tagline,v=>site.footer.tagline=v)));
+  fsFoot.append(el('div',{class:'grp'},'Contact (NAP)'));
+  fsFoot.append(field('Adres (één regel per zin)',textarea((site.footer.contact.address||[]).join('\n'),v=>site.footer.contact.address=v.split('\n').map(x=>x.trim()).filter(Boolean))));
+  fsFoot.append(field('Telefoon',input(site.footer.contact.phone,v=>site.footer.contact.phone=v)));
+  fsFoot.append(field('Telefoon-link (tel:)',input(site.footer.contact.phoneHref,v=>site.footer.contact.phoneHref=v,'tel:+31...')));
+  fsFoot.append(field('E-mail',input(site.footer.contact.email,v=>site.footer.contact.email=v)));
+  fsFoot.append(field('Onderregel',input(site.footer.bottom,v=>site.footer.bottom=v)));
+  fsFoot.append(el('div',{class:'grp'},'Link-kolommen'));
+  const colsWrap=el('div',{});
+  function drawCols(){
+    colsWrap.innerHTML='';
+    site.footer.columns.forEach((col,ci)=>{
+      const box=el('div',{class:'sub'});
+      const head=el('div',{class:'row'});
+      head.append(input(col.title,v=>{col.title=v;},'Kolomtitel'));
+      head.append(miniBtn('✕',()=>{site.footer.columns.splice(ci,1);drawCols();schedulePreview();}));
+      box.append(head);
+      (col.links=col.links||[]).forEach((l,li)=>{
+        const r=el('div',{class:'row'});
+        r.append(input(l.label,v=>{l.label=v;},'Label'));
+        const h=input(l.href,v=>{l.href=v;},'pagina.html');h.style.flex='0 0 120px';r.append(h);
+        r.append(miniBtn('✕',()=>{col.links.splice(li,1);drawCols();schedulePreview();}));
+        box.append(r);
+      });
+      box.append(el('button',{class:'addbtn',onclick:()=>{col.links.push({label:'',href:''});drawCols();schedulePreview();}},'+ link'));
+      colsWrap.append(box);
+    });
+    colsWrap.append(el('button',{class:'addbtn',onclick:()=>{site.footer.columns.push({title:'',links:[]});drawCols();schedulePreview();}},'+ kolom'));
+  }
+  drawCols();fsFoot.append(colsWrap);f.append(fsFoot);
+
+  // Social
+  const fsSoc=el('fieldset',{},el('legend',{},'Social links'));
+  fsSoc.append(listEditor(site.social,[{key:'label',ph:'Naam'},{key:'short',ph:'ic',w:'50px'},{key:'href',ph:'https://…'}]));
+  f.append(fsSoc);
+
+  // WhatsApp
+  const fsWa=el('fieldset',{},el('legend',{},'WhatsApp-knop'));
+  fsWa.append(field('Nummer (bijv. 31851249076)',input(site.whatsapp.number,v=>site.whatsapp.number=v)));
+  fsWa.append(field('Standaardbericht',input(site.whatsapp.text,v=>site.whatsapp.text=v)));
+  fsWa.append(field('Knoptekst',input(site.whatsapp.label,v=>site.whatsapp.label=v)));
+  f.append(fsWa);
+}
+
+/* ── Opslaan / bakken ─────────────────────────────────────────────────────── */
+function siteJsonText(){ return JSON.stringify(site,null,2)+'\n'; }
+async function saveSite(){
+  const r=await putFile(REPO,'site.json',siteJsonText(),'Theme Builder: update site.json',siteSha);
+  siteSha=r.content.sha; return r;
+}
+async function saveTheme(){
+  const newCss=applyTokens(themeCss,tokens);
+  if(newCss===themeCss) return null;
+  const r=await putFile(themeRepo,'theme.css',newCss,'Theme Builder: update design tokens',themeSha);
+  themeCss=newCss; themeSha=r.content.sha; return r;
+}
+async function bakeAll(){
+  const cfgm=Object.assign({},T.DEFAULTS,site);
+  const tree=await gh(`/repos/${REPO}/git/trees/${BRANCH}?recursive=1`);
+  const pages=(tree.tree||[]).filter(t=>t.type==='blob'&&/\.html$/i.test(t.path)).map(t=>t.path);
+  let n=0;
+  for(const p of pages){
+    const f=await getFile(REPO,p);
+    if(!/<main/i.test(f.text))continue;
+    const out=T.bakePage(f.text,p.split('/').pop(),themeCss,cfgm);
+    if(/vanderburg-theme|theme\.css|theme\.js/.test(out)||!/CMS:HEADER:START/.test(out)){setStatus('Sanity faalde: '+p,'err');continue;}
+    await putFile(REPO,p,out,'Bake to flat HTML (Theme Builder)',f.sha);
+    n++;setStatus(`Bakken… ${n}/${pages.length}`,'info');
+  }
+  return n;
+}
+
+/* ── Init ─────────────────────────────────────────────────────────────────── */
+async function init(){
+  if(!REPO){ $('#form').innerHTML='<p style="color:#c0392b">Geen repo. Open via de CMS (knop 🎨 Theme Builder) of voeg ?repo=owner/naam toe.</p>'; return; }
+  $('#repoLbl').textContent=REPO+' @ '+BRANCH;
+  if(!cfg.pat){ $('#patOverlay').classList.add('on'); return; }
+  try{
+    setStatus('Laden…','info');
+    // cms.config.json → themeBase
+    let themeBaseCfg='';
+    try{ themeBaseCfg=JSON.parse((await getFile(REPO,'cms.config.json')).text).themeBase||''; }catch{}
+    themeBase=(cfg.themeBase||themeBaseCfg||'').replace(/\/?$/,'/');
+    if(!themeBase) throw new Error('Geen themeBase in cms.config.json.');
+    themeRepo=themeRepoFrom(themeBase);
+    // theme.js lib
+    T=await loadThemeLib(themeBase);
+    // theme.css (voor sha uit theme-repo; tekst is leidend)
+    try{ const tf=await getFile(themeRepo,'theme.css'); themeCss=tf.text; themeSha=tf.sha; }
+    catch(e){ themeCss=await fetch(themeBase+'theme.css').then(r=>r.text()); themeSha=null; setStatus('Let op: kan theme.css niet schrijven in '+themeRepo+' (token-scope?). site.json opslaan werkt wél.','err'); }
+    tokens=parseTokens(themeCss);
+    // site.json
+    try{ const sf=await getFile(REPO,'site.json'); site=JSON.parse(sf.text); siteSha=sf.sha; }
+    catch(e){ site=JSON.parse(JSON.stringify(T.DEFAULTS)); siteSha=null; }
+    buildForm();
+    renderPreview();
+    setStatus('Klaar','ok');
+  }catch(e){ setStatus(e.message,'err'); }
+}
+
+/* ── Events ───────────────────────────────────────────────────────────────── */
+$('#btnBack').onclick=()=>window.close();
+$('#patSave').onclick=()=>{const v=$('#patInput').value.trim();if(!v)return;cfg.pat=v;saveCfg(cfg);$('#patOverlay').classList.remove('on');init();};
+$('#btnSaveSite').onclick=async()=>{try{setStatus('site.json opslaan…','info');await saveSite();setStatus('site.json opgeslagen ✓','ok');}catch(e){setStatus(e.message,'err');}};
+$('#btnSaveTheme').onclick=async()=>{try{setStatus('theme opslaan…','info');const r=await saveTheme();setStatus(r?'theme opgeslagen ✓':'geen theme-wijzigingen','ok');}catch(e){setStatus('theme opslaan mislukt: '+e.message,'err');}};
+$('#btnBake').onclick=async()=>{
+  if(!confirm('Opslaan (site.json + theme) en alle pagina\'s opnieuw bakken tot platte HTML?'))return;
+  try{
+    setStatus('Opslaan…','info');
+    await saveSite();
+    try{ await saveTheme(); }catch(e){ setStatus('theme niet opgeslagen ('+e.message+'), ga door met bakken','err'); }
+    setStatus('Bakken…','info');
+    const n=await bakeAll();
+    setStatus(`Klaar — ${n} pagina's gepubliceerd ✓`,'ok');
+  }catch(e){ setStatus('Mislukt: '+e.message,'err'); }
+};
+init();
+</script>
+</body>
+</html>
