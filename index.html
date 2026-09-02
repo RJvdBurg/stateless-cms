@@ -440,6 +440,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
     <div class="topbar-actions">
       <button class="btn-icon" id="btnRefresh" title="Bestandsboom vernieuwen">⟳</button>
       <button class="btn btn-ghost" id="btnNewSite" title="Nieuwe website starten (nieuwe repo + theme)">➕ Nieuwe site</button>
+      <button class="btn btn-ghost" id="btnNewPage" title="Nieuwe pagina maken (+ optioneel in het menu)">📄 Nieuwe pagina</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
       <button class="btn btn-ghost" id="btnThemeBuilder" title="Design & site.json visueel bewerken">🎨 Theme Builder</button>
       <button class="btn btn-ghost" id="btnBake" title="Alle pagina's omzetten naar platte, self-contained HTML">🧱 Platte HTML</button>
@@ -2080,35 +2081,150 @@ async function loadSiteJsonForBake() {
   try { return JSON.parse(decodeBase64((await GitHub.getFile('site.json')).content)); }
   catch (e) { return {}; }
 }
+/* Kern van het bakken (geen confirm) — herbruikt door de bakknop én de pagina-flow. */
+async function bakePagesCore(commitMsg) {
+  const T = await loadThemeLib();
+  const cssText = await fetchThemeCss();
+  const cfg = Object.assign({}, T.DEFAULTS, await loadSiteJsonForBake());
+  await loadTree();
+  const pages = state.tree.filter(t => t.type === 'blob' && /\.html$/i.test(t.path)).map(t => t.path);
+  let n = 0, skipped = 0;
+  for (const path of pages) {
+    const f = await GitHub.getFile(path);
+    const src = decodeBase64(f.content);
+    if (!/<main/i.test(src)) { skipped++; continue; }
+    const out = T.bakePage(src, path.split('/').pop(), cssText, cfg);
+    if (/vanderburg-theme|theme\.css|theme\.js/.test(out) || !/CMS:HEADER:START/.test(out)) {
+      toast('Sanity faalde, overgeslagen: ' + path, 'error', 5000); skipped++; continue;
+    }
+    await GitHub.putFile(path, encodeBase64(out), commitMsg || 'Bake to flat self-contained HTML (CMS)', f.sha);
+    n++; toast('Bakken… ' + n + '/' + pages.length, 'info', 1000);
+  }
+  loadTree();
+  return { n, skipped, total: pages.length };
+}
 async function bakeAllPages() {
   if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
   if (!config.themeBase) { toast('Stel eerst "themeBase" in (cms.config.json).', 'error'); return; }
   if (!confirm('Alle HTML-pagina\'s opnieuw bakken tot platte, self-contained HTML?\n\nElke pagina wordt gecommit. De content in <main> blijft ongewijzigd; alleen de ingebakken chrome + inline CSS worden ververst.')) return;
   try {
     toast('Theme laden…', 'info', 2000);
-    const T = await loadThemeLib();
-    const cssText = await fetchThemeCss();
-    const cfg = Object.assign({}, T.DEFAULTS, await loadSiteJsonForBake());
-    if (!state.tree.length) await loadTree();
-    const pages = state.tree.filter(t => t.type === 'blob' && /\.html$/i.test(t.path)).map(t => t.path);
-    if (!pages.length) { toast('Geen HTML-pagina\'s gevonden.', 'info'); return; }
-    let n = 0, skipped = 0;
-    for (const path of pages) {
-      const f = await GitHub.getFile(path);
-      const src = decodeBase64(f.content);
-      if (!/<main/i.test(src)) { skipped++; continue; }
-      const out = T.bakePage(src, path.split('/').pop(), cssText, cfg);
-      if (/vanderburg-theme|theme\.css|theme\.js/.test(out) || !/CMS:HEADER:START/.test(out)) {
-        toast('Sanity faalde, overgeslagen: ' + path, 'error', 5000); skipped++; continue;
-      }
-      await GitHub.putFile(path, encodeBase64(out), 'Bake to flat self-contained HTML (CMS)', f.sha);
-      n++; toast('Gebakken: ' + path + ' (' + n + '/' + pages.length + ')', 'info', 1200);
-    }
-    toast('Klaar — ' + n + ' pagina\'s gebakken' + (skipped ? ', ' + skipped + ' overgeslagen' : '') + '.', 'success', 7000);
-    loadTree();
+    const r = await bakePagesCore();
+    toast('Klaar — ' + r.n + ' pagina\'s gebakken' + (r.skipped ? ', ' + r.skipped + ' overgeslagen' : '') + '.', 'success', 7000);
   } catch (e) {
     toast('Bakken mislukt: ' + e.message, 'error', 9000);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   13d. NIEUWE PAGINA — maak een pagina + (optioneel) in het menu
+   ═══════════════════════════════════════════════════════════════════════════ */
+function slugPage(s){ return (s||'').trim().toLowerCase()
+  .replace(/[àáâä]/g,'a').replace(/[èéêë]/g,'e').replace(/[ìíîï]/g,'i').replace(/[òóôö]/g,'o').replace(/[ùúûü]/g,'u').replace(/ç/g,'c').replace(/ñ/g,'n')
+  .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
+
+function newPageHtml(title, themeBase){
+  return `<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">`+
+    `<title>${escapeHtml(title)}</title><meta name="description" content="${escapeHtml(title)}"><link rel="icon" href="assets/logo.svg">`+
+    `<!-- CMS:GA4:START --><!-- CMS:GA4:END --><!-- CMS:JSONLD:START --><!-- CMS:JSONLD:END -->`+
+    `<link rel="stylesheet" href="${themeBase}theme.css"><script defer src="${themeBase}theme.js"><\/script></head><body>\n<main>\n`+
+    `<section class="section"><div class="container prose"><h1>${escapeHtml(title)}</h1><p class="lead">Nieuwe pagina — bewerk deze tekst in de CMS.</p></div></section>\n`+
+    `</main>\n</body></html>`;
+}
+
+async function createPage(opts){
+  const themeBase = (config.themeBase || '').replace(/\/?$/, '/');
+  if (!themeBase) throw new Error('Geen themeBase ingesteld (cms.config.json).');
+  const path = opts.slug + '.html';
+  // bestaat de pagina al?
+  if (state.tree.some(t => t.path === path)) throw new Error('Pagina "' + path + '" bestaat al.');
+  // 1) pagina committen (linked-form; wordt zo plat gebakken)
+  await GitHub.putFile(path, encodeBase64(newPageHtml(opts.title, themeBase)), 'Nieuwe pagina: ' + path);
+  // 2) optioneel in het menu opnemen (site.json aanpassen)
+  let menuChanged = false;
+  if (opts.inMenu) {
+    let sf; try { sf = await GitHub.getFile('site.json'); } catch(e){ sf = null; }
+    const site = sf ? JSON.parse(decodeBase64(sf.content)) : {};
+    site.nav = site.nav || [];
+    const item = { href: path, label: opts.label || opts.title };
+    if (opts.parent) {
+      const p = site.nav.find(x => x.href === opts.parent);
+      if (p) { p.sub = p.sub || []; p.sub.push(item); }
+      else site.nav.push(item);
+    } else {
+      site.nav.push(item);
+    }
+    await GitHub.putFile('site.json', encodeBase64(JSON.stringify(site, null, 2) + '\n'), 'Menu: + ' + item.label, sf ? sf.sha : undefined);
+    menuChanged = true;
+  }
+  // 3) bakken: bij menu-wijziging alle pagina's (menu verandert overal), anders alleen de nieuwe
+  await loadTree();
+  if (menuChanged) {
+    await bakePagesCore('Bake (menu bijgewerkt)');
+  } else {
+    const T = await loadThemeLib();
+    const cssText = await fetchThemeCss();
+    const cfg = Object.assign({}, T.DEFAULTS, await loadSiteJsonForBake());
+    const f = await GitHub.getFile(path);
+    const out = T.bakePage(decodeBase64(f.content), path, cssText, cfg);
+    await GitHub.putFile(path, encodeBase64(out), 'Bake nieuwe pagina', f.sha);
+    await loadTree();
+  }
+  return path;
+}
+
+function openNewPage(){
+  if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); openSettings('github'); return; }
+  if (!config.themeBase) { toast('Deze site heeft geen themeBase in cms.config.json.', 'error'); return; }
+  const ov = el('div', { class:'newpage-ov', style:'position:fixed;inset:0;background:rgba(20,20,30,.5);display:flex;align-items:center;justify-content:center;z-index:9999;' });
+  const box = el('div', { style:'background:#fff;border-radius:14px;max-width:460px;width:92%;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3);font-size:14px;' });
+  const inp = (ph) => el('input', { type:'text', placeholder:ph, style:'width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin:3px 0 10px;box-sizing:border-box;' });
+  const lbl = t => el('label', { style:'font-size:12px;color:#777;display:block;margin-top:6px;' }, t);
+  const fTitle = inp('bijv. Werkwijze');
+  const fSlug = inp('werkwijze');
+  fTitle.addEventListener('input', () => { if (!fSlug.dataset.touched) fSlug.value = slugPage(fTitle.value); });
+  fSlug.addEventListener('input', () => { fSlug.dataset.touched = '1'; });
+  const cbMenu = el('input', { type:'checkbox', checked:true, style:'margin-right:6px;vertical-align:middle;' });
+  const parentSel = el('select', { style:'width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin:3px 0 10px;' });
+  const logBox = el('div', { style:'font-size:12px;color:#555;background:#f6f6f9;border-radius:8px;padding:8px 10px;margin-top:10px;white-space:pre-wrap;display:none;max-height:150px;overflow:auto;' });
+  const log = m => { logBox.style.display='block'; logBox.textContent += (logBox.textContent?'\n':'') + m; };
+  const btnGo = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;' }, 'Aanmaken');
+  const btnCancel = el('button', { class:'btn btn-ghost', onclick:()=>ov.remove() }, 'Annuleren');
+
+  // menu-parent opties uit site.json laden
+  parentSel.append(el('option', { value:'' }, 'Top-niveau'));
+  loadSiteJsonForBake().then(site => {
+    (site.nav || []).forEach(it => { parentSel.append(el('option', { value: it.href }, 'Onder “' + it.label + '”')); });
+  }).catch(()=>{});
+
+  btnGo.onclick = async () => {
+    const slug = slugPage(fSlug.value || fTitle.value);
+    if (!fTitle.value.trim()) { toast('Vul een titel in.', 'error'); return; }
+    if (!slug) { toast('Ongeldige bestandsnaam.', 'error'); return; }
+    btnGo.disabled = btnCancel.disabled = true; btnGo.textContent = 'Bezig…';
+    try {
+      log('Pagina aanmaken: ' + slug + '.html');
+      if (cbMenu.checked) log('Toevoegen aan menu' + (parentSel.value ? ' (onder ' + parentSel.value + ')' : ' (top-niveau)') + ' + herbakken…');
+      const p = await createPage({ title: fTitle.value.trim(), slug, inMenu: cbMenu.checked, parent: parentSel.value || '', label: fTitle.value.trim() });
+      toast('Pagina "' + p + '" aangemaakt.', 'success', 4000);
+      ov.remove();
+      openFile(p);
+    } catch (e) {
+      log('❌ ' + e.message); toast('Mislukt: ' + e.message, 'error', 8000);
+      btnGo.disabled = btnCancel.disabled = false; btnGo.textContent = 'Aanmaken';
+    }
+  };
+
+  box.append(
+    el('h2', { style:'margin:0 0 12px;color:#3E2E6D;font-size:18px;' }, '📄 Nieuwe pagina'),
+    lbl('Titel'), fTitle,
+    lbl('Bestandsnaam (URL)'), fSlug,
+    el('label', { style:'display:block;margin:8px 0 4px;font-size:13px;' }, cbMenu, 'In het menu opnemen'),
+    lbl('Menu-plaatsing'), parentSel,
+    logBox,
+    el('div', { style:'display:flex;gap:8px;justify-content:flex-end;margin-top:14px;' }, btnCancel, btnGo)
+  );
+  ov.append(box); document.body.append(ov);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2124,6 +2240,11 @@ const gh2 = {
   enablePages: async (repo) => { try { return await GitHub.req(`/repos/${repo}/pages`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ source:{ branch:'main', path:'/' } }) }); } catch(e){ return null; } }
 };
 function slugRepo(s){ return (s||'').trim().toLowerCase().replace(/[^a-z0-9._-]+/g,'-').replace(/^-+|-+$/g,''); }
+async function readFileB64(file){
+  const ext = ((file.name.split('.').pop()) || 'png').toLowerCase();
+  if (ext === 'svg' || file.type === 'image/svg+xml') return { b64: encodeBase64(await file.text()), ext: 'svg' };
+  return { b64: arrayBufferToBase64(await file.arrayBuffer()), ext };
+}
 
 function starterSiteJson(name){
   return {
@@ -2182,14 +2303,28 @@ async function runNewSite(opts, log){
   try { await gh2.createRepo(siteRepoName, opts.siteName || 'Website (Stateless CMS)'); }
   catch(e){ throw new Error('Kon site-repo niet aanmaken: '+e.message+' — mag je token repo\'s aanmaken?'); }
 
-  // 3) Logo's (placeholder) + config + site.json
+  // 3) Logo's (upload of placeholder) + config + site.json
   log('Bestanden aanmaken…');
-  const dl = await gh2.getFile(STARTER_THEME, 'assets/default-logo.svg');
-  const dlw = await gh2.getFile(STARTER_THEME, 'assets/default-logo-white.svg');
-  await gh2.putFile(siteRepo, 'assets/logo.svg', dl.content, 'Add placeholder logo');
-  await gh2.putFile(siteRepo, 'assets/logo-white.svg', dlw.content, 'Add placeholder logo (white)');
+  let logoPath = 'assets/logo.svg', logoWhitePath = 'assets/logo-white.svg';
+  if (opts.logoFile) {
+    const r = await readFileB64(opts.logoFile); logoPath = 'assets/logo.' + r.ext;
+    await gh2.putFile(siteRepo, logoPath, r.b64, 'Add logo');
+  } else {
+    const dl = await gh2.getFile(STARTER_THEME, 'assets/default-logo.svg');
+    await gh2.putFile(siteRepo, 'assets/logo.svg', dl.content, 'Add placeholder logo');
+  }
+  if (opts.logoWhiteFile) {
+    const r = await readFileB64(opts.logoWhiteFile); logoWhitePath = 'assets/logo-white.' + r.ext;
+    await gh2.putFile(siteRepo, logoWhitePath, r.b64, 'Add white logo');
+  } else if (opts.logoFile) {
+    logoWhitePath = logoPath; // geen aparte witte versie → gebruik dezelfde
+  } else {
+    const dlw = await gh2.getFile(STARTER_THEME, 'assets/default-logo-white.svg');
+    await gh2.putFile(siteRepo, 'assets/logo-white.svg', dlw.content, 'Add placeholder logo (white)');
+  }
 
   const site = starterSiteJson(opts.siteName || siteRepoName);
+  site.logo = logoPath; site.logoWhite = logoWhitePath;
   await gh2.putFile(siteRepo, 'site.json', encodeBase64(JSON.stringify(site, null, 2)+'\n'), 'Add site.json');
   const cmscfg = { siteName: opts.siteName || siteRepoName, siteUrl: opts.siteUrl || '', branch:'main', imgDir:'images',
     ga4:'', model:'gemini-flash-latest', autoJsonld:true, themeBase, sysPrompt:'' };
@@ -2226,6 +2361,9 @@ function openNewSite(){
   const fRepo = inp('bijv. mijn-nieuwe-site');
   const fName = inp('bijv. Mijn Nieuwe Site');
   const fUrl  = inp('https://… (optioneel)');
+  const fileStyle = 'width:100%;padding:6px;border:1px solid #ddd;border-radius:8px;margin:3px 0 10px;box-sizing:border-box;font-size:12px;';
+  const fLogo = el('input', { type:'file', accept:'image/*', style:fileStyle });
+  const fLogoWhite = el('input', { type:'file', accept:'image/*', style:fileStyle });
   // theme keuze
   const themeSel = el('select', { style:'width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin:3px 0 8px;' });
   themeSel.append(el('option', { value:'__new__' }, '➕ Nieuw theme (vanaf starter-theme)'));
@@ -2242,7 +2380,8 @@ function openNewSite(){
   btnGo.onclick = async () => {
     const opts = { siteRepo: fRepo.value, siteName: fName.value.trim(), siteUrl: fUrl.value.trim(),
       themeMode: themeSel.value==='__new__' ? 'new' : 'existing',
-      themeBase: themeSel.value==='__new__' ? '' : themeSel.value, themeRepo: fThemeRepo.value };
+      themeBase: themeSel.value==='__new__' ? '' : themeSel.value, themeRepo: fThemeRepo.value,
+      logoFile: fLogo.files[0] || null, logoWhiteFile: fLogoWhite.files[0] || null };
     if(!slugRepo(opts.siteRepo)){ toast('Vul een geldige repo-naam in.', 'error'); return; }
     if(opts.themeMode==='new' && !slugRepo(opts.themeRepo)){ toast('Vul een theme-repo-naam in.', 'error'); return; }
     btnGo.disabled = true; btnCancel.disabled = true; btnGo.textContent = 'Bezig…';
@@ -2264,6 +2403,8 @@ function openNewSite(){
     lbl('Repo-naam voor de nieuwe site'), fRepo,
     lbl('Site-naam (merk)'), fName,
     lbl('Site-URL (optioneel)'), fUrl,
+    lbl('Logo (optioneel — anders placeholder)'), fLogo,
+    lbl('Logo wit, voor footer (optioneel)'), fLogoWhite,
     lbl('Theme'), themeSel, themeExtra,
     logBox,
     el('div', { style:'display:flex;gap:8px;justify-content:flex-end;margin-top:16px;' }, btnCancel, btnGo)
@@ -2286,6 +2427,7 @@ function openNewSite(){
 $('#btnSettings').onclick = () => openSettings();
 $('#btnImages').onclick = () => openImagesManager();
 $('#btnNewSite').onclick = () => openNewSite();
+$('#btnNewPage').onclick = () => openNewPage();
 $('#btnBake').onclick = () => bakeAllPages();
 $('#btnThemeBuilder').onclick = () => {
   const url = 'theme-builder.html' + (config.repo ? '?repo=' + encodeURIComponent(config.repo) : '');
