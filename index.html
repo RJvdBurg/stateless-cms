@@ -440,6 +440,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
     <div class="topbar-actions">
       <button class="btn-icon" id="btnRefresh" title="Bestandsboom vernieuwen">⟳</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
+      <button class="btn btn-ghost" id="btnBake" title="Alle pagina's omzetten naar platte, self-contained HTML">🧱 Platte HTML</button>
       <button class="btn btn-ghost" id="btnSettings">⚙ Instellingen</button>
       <button class="btn btn-cta" id="btnPublish" disabled>↑ Opslaan &amp; Publiceer</button>
     </div>
@@ -754,10 +755,10 @@ const OLD_CFG_KEY = 'vdb_cms_config_v1';   // migratie van de oude, site-specifi
 const defaultConfig = {
   pat:'', repo:'', branch:'main', imgDir:'images',
   gemini:'', model:'gemini-flash-latest', sysPrompt:'',
-  ga4:'', autoJsonld:true, siteName:'', siteUrl:''
+  ga4:'', autoJsonld:true, siteName:'', siteUrl:'', themeBase:''
 };
 // Velden die een site's cms.config.json mag zetten (secrets zoals pat/gemini NOOIT)
-const SITE_CFG_KEYS = ['branch','imgDir','model','sysPrompt','ga4','autoJsonld','siteName','siteUrl'];
+const SITE_CFG_KEYS = ['branch','imgDir','model','sysPrompt','ga4','autoJsonld','siteName','siteUrl','themeBase'];
 const cleanRepo = s => (s||'').replace(/^https?:\/\/github\.com\//,'').replace(/\.git$/,'').replace(/\/+$/,'');
 let config = loadConfig();
 function loadConfig() {
@@ -2046,11 +2047,92 @@ function refreshTopbar() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   13b. BAKKEN → PLATTE, SELF-CONTAINED HTML
+   Zet elke pagina om naar zelfstandige HTML: theme.css inline, header/footer/
+   WhatsApp + gedrag ingebakken, externe theme-verwijzingen weg. Hergebruikt de
+   pure builders uit theme.js (één bron), met markers zodat opnieuw bakken werkt.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let _themeLib = null;
+function themeBaseUrl() { return (config.themeBase || '').replace(/\/?$/, '/'); }
+async function loadThemeLib() {
+  if (window.Theme) return window.Theme;
+  const base = themeBaseUrl();
+  if (!base) throw new Error('Geen themeBase ingesteld (cms.config.json → "themeBase").');
+  window.THEME_LIB_ONLY = true;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = base + 'theme.js';
+    s.onload = res; s.onerror = () => rej(new Error('Kon theme.js niet laden: ' + s.src));
+    document.head.appendChild(s);
+  });
+  if (!window.Theme) throw new Error('theme.js geladen maar window.Theme ontbreekt.');
+  return window.Theme;
+}
+async function fetchThemeCss() {
+  const url = themeBaseUrl() + 'theme.css';
+  const r = await fetch(url, { cache: 'no-cache' });
+  if (!r.ok) throw new Error('Kon theme.css niet laden (' + r.status + ').');
+  return r.text();
+}
+async function loadSiteJsonForBake() {
+  try { return JSON.parse(decodeBase64((await GitHub.getFile('site.json')).content)); }
+  catch (e) { return {}; }
+}
+function bakePage(html, page, cssText, cfg, T) {
+  const email = (cfg.footer && cfg.footer.contact && cfg.footer.contact.email) || '';
+  const BEH = '<script>window.__contactEmail=' + JSON.stringify(email) + ';(' + T.wireBehaviour.toString() + ')();<\/script>';
+  const reBlock = k => new RegExp('<!-- CMS:' + k + ':START -->[\\s\\S]*?<!-- CMS:' + k + ':END -->');
+  const ensure = (h, key, inner, fbIns) => {
+    const b = '<!-- CMS:' + key + ':START -->\n' + inner + '\n<!-- CMS:' + key + ':END -->';
+    return reBlock(key).test(h) ? h.replace(reBlock(key), b) : fbIns(h, b);
+  };
+  html = ensure(html, 'THEMECSS', '<style>\n' + cssText + '\n</style>', (h, b) =>
+    /<link[^>]+theme\.css[^>]*>/.test(h) ? h.replace(/<link[^>]+theme\.css[^>]*>/, b) : h.replace('</head>', b + '\n</head>'));
+  html = html.replace(/\s*<script[^>]+theme\.js[^>]*><\/script>/g, '');
+  const headerHTML = T.headerOuterHTML(cfg, page).replace(/ onerror="[^"]*"/g, '');
+  html = ensure(html, 'HEADER', headerHTML, (h, b) => h.replace(/<main\b/, b + '\n<main'));
+  const chrome = (T.footerOuterHTML(cfg) + '\n' + T.waOuterHTML(cfg)).replace(/ onerror="[^"]*"/g, '') + '\n' + BEH;
+  html = ensure(html, 'CHROME', chrome, (h, b) => h.replace(/<\/main>/, '</main>\n' + b));
+  return html;
+}
+async function bakeAllPages() {
+  if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
+  if (!config.themeBase) { toast('Stel eerst "themeBase" in (cms.config.json).', 'error'); return; }
+  if (!confirm('Alle HTML-pagina\'s opnieuw bakken tot platte, self-contained HTML?\n\nElke pagina wordt gecommit. De content in <main> blijft ongewijzigd; alleen de ingebakken chrome + inline CSS worden ververst.')) return;
+  try {
+    toast('Theme laden…', 'info', 2000);
+    const T = await loadThemeLib();
+    const cssText = await fetchThemeCss();
+    const cfg = Object.assign({}, T.DEFAULTS, await loadSiteJsonForBake());
+    if (!state.tree.length) await loadTree();
+    const pages = state.tree.filter(t => t.type === 'blob' && /\.html$/i.test(t.path)).map(t => t.path);
+    if (!pages.length) { toast('Geen HTML-pagina\'s gevonden.', 'info'); return; }
+    let n = 0, skipped = 0;
+    for (const path of pages) {
+      const f = await GitHub.getFile(path);
+      const src = decodeBase64(f.content);
+      if (!/<main/i.test(src)) { skipped++; continue; }
+      const out = bakePage(src, path.split('/').pop(), cssText, cfg, T);
+      if (/vanderburg-theme|theme\.css|theme\.js/.test(out) || !/CMS:HEADER:START/.test(out)) {
+        toast('Sanity faalde, overgeslagen: ' + path, 'error', 5000); skipped++; continue;
+      }
+      await GitHub.putFile(path, encodeBase64(out), 'Bake to flat self-contained HTML (CMS)', f.sha);
+      n++; toast('Gebakken: ' + path + ' (' + n + '/' + pages.length + ')', 'info', 1200);
+    }
+    toast('Klaar — ' + n + ' pagina\'s gebakken' + (skipped ? ', ' + skipped + ' overgeslagen' : '') + '.', 'success', 7000);
+    loadTree();
+  } catch (e) {
+    toast('Bakken mislukt: ' + e.message, 'error', 9000);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    14. EVENT WIRING
    ═══════════════════════════════════════════════════════════════════════════ */
 // Topbar
 $('#btnSettings').onclick = () => openSettings();
 $('#btnImages').onclick = () => openImagesManager();
+$('#btnBake').onclick = () => bakeAllPages();
 $('#btnCloseImages').onclick = $('#btnCloseImages2').onclick = () => $('#imagesModal').classList.remove('open');
 $('#btnRefresh').onclick = () => loadTree();
 $('#btnReloadTree').onclick = () => loadTree();
