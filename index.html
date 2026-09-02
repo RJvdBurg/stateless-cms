@@ -2147,7 +2147,7 @@ function starterPageHtml(kind, name, themeBase){
   return `<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">`+
     `<title>${escapeHtml(T)}</title><meta name="description" content="${escapeHtml(name)}"><link rel="icon" href="assets/logo.svg">`+
     `<!-- CMS:GA4:START --><!-- CMS:GA4:END --><!-- CMS:JSONLD:START --><!-- CMS:JSONLD:END -->`+
-    `<link rel="stylesheet" href="${themeBase}theme.css"><script defer src="${themeBase}theme.js"><\/script></head><body>\n${B}\n</body></html>`;
+    `<link rel="stylesheet" href="${themeBase}theme.css"><script defer src="${themeBase}theme.js"><\/script></head><body>\n<main>\n${B}\n</main>\n</body></html>`;
 }
 
 async function runNewSite(opts, log){
