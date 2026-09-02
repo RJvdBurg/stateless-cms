@@ -439,6 +439,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
 
     <div class="topbar-actions">
       <button class="btn-icon" id="btnRefresh" title="Bestandsboom vernieuwen">⟳</button>
+      <button class="btn btn-ghost" id="btnNewSite" title="Nieuwe website starten (nieuwe repo + theme)">➕ Nieuwe site</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
       <button class="btn btn-ghost" id="btnThemeBuilder" title="Design & site.json visueel bewerken">🎨 Theme Builder</button>
       <button class="btn btn-ghost" id="btnBake" title="Alle pagina's omzetten naar platte, self-contained HTML">🧱 Platte HTML</button>
@@ -2111,11 +2112,180 @@ async function bakeAllPages() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   13c. NIEUWE SITE (wizard) — nieuwe repo + theme + scaffold + Pages
+   ═══════════════════════════════════════════════════════════════════════════ */
+const STARTER_THEME = 'RJvdBurg/starter-theme';
+const gh2 = {
+  me: () => GitHub.req('/user'),
+  createRepo: (name, desc) => GitHub.req('/user/repos', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name, description: desc, private:false, auto_init:false }) }),
+  listRepos: () => GitHub.req('/user/repos?per_page=100&sort=updated&affiliation=owner'),
+  getFile: (repo, path) => GitHub.req(`/repos/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=main`),
+  putFile: (repo, path, b64, message, sha) => GitHub.req(`/repos/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(sha ? { message, content:b64, branch:'main', sha } : { message, content:b64, branch:'main' }) }),
+  enablePages: async (repo) => { try { return await GitHub.req(`/repos/${repo}/pages`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ source:{ branch:'main', path:'/' } }) }); } catch(e){ return null; } }
+};
+function slugRepo(s){ return (s||'').trim().toLowerCase().replace(/[^a-z0-9._-]+/g,'-').replace(/^-+|-+$/g,''); }
+
+function starterSiteJson(name){
+  return {
+    brand: name, logo:'assets/logo.svg', logoWhite:'assets/logo-white.svg', logoAlt: name,
+    cta:{ label:'Contact', href:'contact.html' },
+    nav:[ {href:'index.html',label:'Home'}, {href:'over.html',label:'Over'}, {href:'contact.html',label:'Contact'} ],
+    footer:{ tagline:'Een korte pay-off over je merk.',
+      columns:[ {title:'Navigatie',links:[ {href:'index.html',label:'Home'}, {href:'over.html',label:'Over'}, {href:'contact.html',label:'Contact'} ]} ],
+      contact:{ title:'Contact', address:['Straat 1','1234 AB Plaats'], phone:'', phoneHref:'', email:'info@example.com' },
+      bottom:'© 2026 '+name },
+    social:[], whatsapp:{ number:'', text:'', label:'' }
+  };
+}
+function starterPageHtml(kind, name, themeBase){
+  const T = { index:name, over:'Over — '+name, contact:'Contact — '+name }[kind];
+  const B = {
+    index:`<section class="section"><div class="container prose"><span class="label" style="color:var(--pink);font-weight:700;letter-spacing:.1em">WELKOM</span><h1>${escapeHtml(name)}</h1><p class="lead">Vervang deze tekst met je eigen introductie. Pas het menu, de kleuren en de footer aan via de Theme Builder.</p><a class="btn btn-cta" href="contact.html">Neem contact op</a></div></section>`,
+    over:`<section class="section"><div class="container prose"><h1>Over ${escapeHtml(name)}</h1><p>Vertel hier je verhaal.</p></div></section>`,
+    contact:`<section class="section"><div class="container prose"><h1>Contact</h1><p>Je contactgegevens. Bewerk deze pagina in de CMS.</p></div></section>`
+  }[kind];
+  return `<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">`+
+    `<title>${escapeHtml(T)}</title><meta name="description" content="${escapeHtml(name)}"><link rel="icon" href="assets/logo.svg">`+
+    `<!-- CMS:GA4:START --><!-- CMS:GA4:END --><!-- CMS:JSONLD:START --><!-- CMS:JSONLD:END -->`+
+    `<link rel="stylesheet" href="${themeBase}theme.css"><script defer src="${themeBase}theme.js"><\/script></head><body>\n${B}\n</body></html>`;
+}
+
+async function runNewSite(opts, log){
+  const me = await gh2.me();
+  const owner = me.login;
+  const siteRepoName = slugRepo(opts.siteRepo);
+  const siteRepo = `${owner}/${siteRepoName}`;
+  if(!siteRepoName) throw new Error('Ongeldige repo-naam.');
+
+  // 1) Theme bepalen
+  let themeBase = opts.themeBase;
+  if(opts.themeMode === 'new'){
+    const themeRepoName = slugRepo(opts.themeRepo);
+    const themeRepo = `${owner}/${themeRepoName}`;
+    log('Theme-repo aanmaken: '+themeRepo);
+    try { await gh2.createRepo(themeRepoName, 'Theme (Stateless CMS) — gekloond van starter-theme'); }
+    catch(e){ throw new Error('Kon theme-repo niet aanmaken: '+e.message+' — mag je token repo\'s aanmaken?'); }
+    log('Starter-theme kopiëren…');
+    for(const p of ['theme.css','theme.js','assets/default-logo.svg','assets/default-logo-white.svg','README.md']){
+      const f = await gh2.getFile(STARTER_THEME, p);
+      await gh2.putFile(themeRepo, p, f.content, 'Init from starter-theme');
+    }
+    await gh2.enablePages(themeRepo);
+    themeBase = `https://${owner.toLowerCase()}.github.io/${themeRepoName}/`;
+    log('Theme klaar: '+themeBase);
+  }
+  if(!themeBase) throw new Error('Geen theme gekozen.');
+  themeBase = themeBase.replace(/\/?$/,'/');
+
+  // 2) Site-repo aanmaken
+  log('Site-repo aanmaken: '+siteRepo);
+  try { await gh2.createRepo(siteRepoName, opts.siteName || 'Website (Stateless CMS)'); }
+  catch(e){ throw new Error('Kon site-repo niet aanmaken: '+e.message+' — mag je token repo\'s aanmaken?'); }
+
+  // 3) Logo's (placeholder) + config + site.json
+  log('Bestanden aanmaken…');
+  const dl = await gh2.getFile(STARTER_THEME, 'assets/default-logo.svg');
+  const dlw = await gh2.getFile(STARTER_THEME, 'assets/default-logo-white.svg');
+  await gh2.putFile(siteRepo, 'assets/logo.svg', dl.content, 'Add placeholder logo');
+  await gh2.putFile(siteRepo, 'assets/logo-white.svg', dlw.content, 'Add placeholder logo (white)');
+
+  const site = starterSiteJson(opts.siteName || siteRepoName);
+  await gh2.putFile(siteRepo, 'site.json', encodeBase64(JSON.stringify(site, null, 2)+'\n'), 'Add site.json');
+  const cmscfg = { siteName: opts.siteName || siteRepoName, siteUrl: opts.siteUrl || '', branch:'main', imgDir:'images',
+    ga4:'', model:'gemini-flash-latest', autoJsonld:true, themeBase, sysPrompt:'' };
+  await gh2.putFile(siteRepo, 'cms.config.json', encodeBase64(JSON.stringify(cmscfg, null, 2)+'\n'), 'Add cms.config.json');
+  const robots = `User-agent: *\nAllow: /\n`+(opts.siteUrl?`Sitemap: ${opts.siteUrl.replace(/\/?$/,'')}/sitemap.xml\n`:'');
+  await gh2.putFile(siteRepo, 'robots.txt', encodeBase64(robots), 'Add robots.txt');
+
+  // 4) Starterpagina's — direct plat gebakken
+  log('Theme laden & pagina\'s bakken…');
+  // theme.js als lib laden (window.Theme) — kan al geladen zijn
+  const T = window.Theme || await (async()=>{ window.THEME_LIB_ONLY=true; await new Promise((res,rej)=>{const s=document.createElement('script');s.src=themeBase+'theme.js';s.onload=res;s.onerror=()=>rej(new Error('theme.js laden mislukt'));document.head.appendChild(s);}); return window.Theme; })();
+  const cssText = await fetch(themeBase+'theme.css',{cache:'no-cache'}).then(r=>r.text());
+  const cfg = Object.assign({}, T.DEFAULTS, site);
+  for(const kind of ['index','over','contact']){
+    const linked = starterPageHtml(kind, site.brand, themeBase);
+    const flat = T.bakePage(linked, kind+'.html', cssText, cfg);
+    await gh2.putFile(siteRepo, kind+'.html', encodeBase64(flat), 'Add '+kind+'.html (flat)');
+  }
+
+  // 5) Pages aanzetten
+  log('GitHub Pages aanzetten…');
+  await gh2.enablePages(siteRepo);
+
+  return { siteRepo, owner, siteRepoName, themeBase };
+}
+
+function openNewSite(){
+  if(!isConfigured()){ toast('Verbind eerst met GitHub (token nodig).', 'error'); openSettings('github'); return; }
+  const ov = el('div', { class:'newsite-ov', style:'position:fixed;inset:0;background:rgba(20,20,30,.5);display:flex;align-items:center;justify-content:center;z-index:9999;' });
+  const box = el('div', { style:'background:#fff;border-radius:14px;max-width:520px;width:92%;max-height:90vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3);font-size:14px;' });
+  const inp = (ph,val) => el('input', { type:'text', placeholder:ph, value:val||'', style:'width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin:3px 0 10px;box-sizing:border-box;' });
+  const lbl = t => el('label', { style:'font-size:12px;color:#777;display:block;margin-top:6px;' }, t);
+
+  const fRepo = inp('bijv. mijn-nieuwe-site');
+  const fName = inp('bijv. Mijn Nieuwe Site');
+  const fUrl  = inp('https://… (optioneel)');
+  // theme keuze
+  const themeSel = el('select', { style:'width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;margin:3px 0 8px;' });
+  themeSel.append(el('option', { value:'__new__' }, '➕ Nieuw theme (vanaf starter-theme)'));
+  const fThemeRepo = inp('bijv. mijn-nieuwe-site-theme');
+  const themeExtra = el('div', {}, lbl('Naam van de nieuwe theme-repo'), fThemeRepo);
+  themeSel.onchange = () => { themeExtra.style.display = themeSel.value==='__new__' ? 'block' : 'none'; };
+
+  const logBox = el('div', { style:'font-size:12px;color:#555;background:#f6f6f9;border-radius:8px;padding:8px 10px;margin-top:10px;white-space:pre-wrap;display:none;max-height:160px;overflow:auto;' });
+  const log = m => { logBox.style.display='block'; logBox.textContent += (logBox.textContent?'\n':'') + m; logBox.scrollTop = logBox.scrollHeight; };
+
+  const btnGo = el('button', { class:'btn', style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;' }, 'Aanmaken');
+  const btnCancel = el('button', { class:'btn btn-ghost', onclick:()=>ov.remove() }, 'Annuleren');
+
+  btnGo.onclick = async () => {
+    const opts = { siteRepo: fRepo.value, siteName: fName.value.trim(), siteUrl: fUrl.value.trim(),
+      themeMode: themeSel.value==='__new__' ? 'new' : 'existing',
+      themeBase: themeSel.value==='__new__' ? '' : themeSel.value, themeRepo: fThemeRepo.value };
+    if(!slugRepo(opts.siteRepo)){ toast('Vul een geldige repo-naam in.', 'error'); return; }
+    if(opts.themeMode==='new' && !slugRepo(opts.themeRepo)){ toast('Vul een theme-repo-naam in.', 'error'); return; }
+    btnGo.disabled = true; btnCancel.disabled = true; btnGo.textContent = 'Bezig…';
+    try {
+      const r = await runNewSite(opts, log);
+      log('Klaar! Nieuwe site: '+r.siteRepo);
+      toast('Nieuwe site aangemaakt. Openen…', 'success', 4000);
+      setTimeout(()=>{ location.href = location.pathname + '?repo=' + encodeURIComponent(r.siteRepo); }, 1200);
+    } catch(e){
+      log('❌ '+e.message);
+      toast('Mislukt: '+e.message, 'error', 9000);
+      btnGo.disabled = false; btnCancel.disabled = false; btnGo.textContent = 'Aanmaken';
+    }
+  };
+
+  box.append(
+    el('h2', { style:'margin:0 0 4px;color:#3E2E6D;font-size:18px;' }, '➕ Nieuwe site'),
+    el('p', { style:'margin:0 0 14px;color:#777;font-size:13px;' }, 'Maakt een nieuwe repo aan, kiest/kloont een theme, scaffolt de site en zet GitHub Pages aan.'),
+    lbl('Repo-naam voor de nieuwe site'), fRepo,
+    lbl('Site-naam (merk)'), fName,
+    lbl('Site-URL (optioneel)'), fUrl,
+    lbl('Theme'), themeSel, themeExtra,
+    logBox,
+    el('div', { style:'display:flex;gap:8px;justify-content:flex-end;margin-top:16px;' }, btnCancel, btnGo)
+  );
+  ov.append(box); document.body.append(ov);
+
+  // bestaande themes bijladen in de dropdown
+  gh2.listRepos().then(repos => {
+    (repos||[]).filter(r => /theme/i.test(r.name)).forEach(r => {
+      const base = `https://${r.owner.login.toLowerCase()}.github.io/${r.name}/`;
+      themeSel.append(el('option', { value: base }, '📦 '+r.full_name));
+    });
+  }).catch(()=>{});
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    14. EVENT WIRING
    ═══════════════════════════════════════════════════════════════════════════ */
 // Topbar
 $('#btnSettings').onclick = () => openSettings();
 $('#btnImages').onclick = () => openImagesManager();
+$('#btnNewSite').onclick = () => openNewSite();
 $('#btnBake').onclick = () => bakeAllPages();
 $('#btnThemeBuilder').onclick = () => {
   const url = 'theme-builder.html' + (config.repo ? '?repo=' + encodeURIComponent(config.repo) : '');
