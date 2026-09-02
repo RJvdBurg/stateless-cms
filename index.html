@@ -443,7 +443,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
       <button class="btn btn-ghost" id="btnNewPage" title="Nieuwe pagina maken (+ optioneel in het menu)">📄 Nieuwe pagina</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
       <button class="btn btn-ghost" id="btnThemeBuilder" title="Design & site.json visueel bewerken">🎨 Theme Builder</button>
-      <button class="btn btn-ghost" id="btnBake" title="Alle pagina's omzetten naar platte, self-contained HTML">🧱 Platte HTML</button>
+      <button class="btn btn-ghost" id="btnBake" title="Alle pagina's opnieuw bakken — alleen nodig na een globale design/menu-wijziging">🧱 Alles herbakken</button>
       <button class="btn btn-ghost" id="btnSettings">⚙ Instellingen</button>
       <button class="btn btn-cta" id="btnPublish" disabled>↑ Opslaan &amp; Publiceer</button>
     </div>
@@ -1957,6 +1957,18 @@ async function doPublish() {
       if (jsonld) content = upsertBlock(content, 'JSONLD', `<script type="application/ld+json">\n${JSON.stringify(jsonld, null, 2)}\n<\/script>`);
     } else if (isMd && jsonld) {
       content = upsertFrontmatterJsonLd(content, jsonld);
+    }
+
+    // 2b. Automatisch plat bakken (chrome + inline CSS ververst, <main>-content blijft).
+    //     Zo is publiceren altijd één stap én altijd correcte, self-contained HTML.
+    if (isHtml && config.themeBase && /<main/i.test(content)) {
+      try {
+        setStatus('Platte HTML bakken…');
+        const T = await loadThemeLib();
+        const cssText = await fetchThemeCss();
+        const cfg = Object.assign({}, T.DEFAULTS, await loadSiteJsonForBake());
+        content = T.bakePage(content, path.split('/').pop(), cssText, cfg);
+      } catch (e) { toast('Bakken overgeslagen (gewoon opgeslagen): ' + e.message, 'info', 5000); }
     }
 
     // 3. Commit naar GitHub
