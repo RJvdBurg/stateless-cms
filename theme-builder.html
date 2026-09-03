@@ -101,7 +101,18 @@ async function gh(path,opts={}){
   return res.status===204?null:res.json();
 }
 async function getFile(repo,path){ const d=await gh(`/repos/${repo}/contents/${path}?ref=${BRANCH}`); return {text:dec(d.content),sha:d.sha}; }
+async function getFileRaw(repo,path){ return gh(`/repos/${repo}/contents/${path}?ref=${BRANCH}`); } // {content(base64), sha}
 async function putFile(repo,path,text,msg,sha){ const body={message:msg,content:enc(text),branch:BRANCH};if(sha)body.sha=sha; return gh(`/repos/${repo}/contents/${path}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+async function putB64(repo,path,b64,msg,sha){ const body={message:msg,content:b64,branch:BRANCH};if(sha)body.sha=sha; return gh(`/repos/${repo}/contents/${path}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }
+async function fileSha(repo,path){ try{ return (await getFile(repo,path)).sha; }catch(e){ return undefined; } }
+function mimeForExt(ext){ ext=(ext||'').toLowerCase(); return ext==='svg'?'image/svg+xml':(ext==='jpg'?'image/jpeg':'image/'+ext); }
+async function readLogo(file){
+  const ext=((file.name.split('.').pop())||'png').toLowerCase();
+  if(ext==='svg'||file.type==='image/svg+xml'){ const t=await file.text(); const b=enc(t); return {ext:'svg',b64:b,mime:'image/svg+xml',dataUrl:'data:image/svg+xml;base64,'+b}; }
+  const buf=await file.arrayBuffer(); const bytes=new Uint8Array(buf); let bin=''; for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); const b64=btoa(bin);
+  const mime=file.type||mimeForExt(ext);
+  return {ext,b64,mime,dataUrl:'data:'+mime+';base64,'+b64};
+}
 
 /* ── Afgeleide URLs ───────────────────────────────────────────────────────── */
 function ownerRepo(){ const [o,r]=REPO.split('/'); return {o,r}; }
@@ -119,6 +130,8 @@ let themeRepo='';
 let tokens={};              // {purple,pink,teal,g0,g1,g2,fdisplay,fbody,maxw}
 let aiPrompt='';            // laatste AI-palet-beschrijving (blijft bij form-rebuild)
 let aiReasoning='';         // korte toelichting van Gemini bij het laatste palet
+let previewLogo='';         // dataURL-override voor instant logo-preview (header)
+let previewLogoWhite='';    // idem (footer)
 
 const $=s=>document.querySelector(s);
 function setStatus(msg,type='info'){const e=$('#status');e.className='status '+type;e.textContent=msg;if(type==='ok')setTimeout(()=>{if(e.textContent===msg)e.textContent='';},4000);}
@@ -199,9 +212,23 @@ async function geminiPalette(desc){
     'Gebruik altijd 6-cijferige hex (#rrggbb). Zorg voor voldoende contrast met een witte achtergrond, en witte tekst moet leesbaar zijn op accent. '+
     'fontDisplay = lettertype voor koppen, fontBody = lettertype voor lopende tekst (goed leesbaar). Kies BEIDE UITSLUITEND uit deze lijst, '+
     'exact zoals geschreven: '+Object.keys(FONTS).join(', ')+'. Combineer smaakvol (bijv. een expressieve display + een neutrale sans voor tekst). '+
+    'Als er een logo-afbeelding is meegestuurd, baseer primary/accent/secondary vooral op de dominante kleuren daarin. '+
     'Houd reasoning tot max 1 korte zin.';
-  const body={systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:'Beschrijving van het merk/de gewenste sfeer: '+desc}]}],
-    generationConfig:{responseMimeType:'application/json',responseSchema:schema,temperature:0.95}};
+  const parts=[{text:'Beschrijving van het merk/de gewenste sfeer: '+(desc||'(geen beschrijving; gebruik het logo)')}];
+  // Stuur het (raster)logo mee zodat het palet op de logokleuren wordt afgestemd (Gemini vision kan geen SVG lezen)
+  try{
+    if(site.logo){
+      const ext=(site.logo.split('.').pop()||'').toLowerCase();
+      const mime=mimeForExt(ext);
+      if(mime!=='image/svg+xml'){
+        const lf=await getFileRaw(REPO, site.logo);
+        parts.push({text:'Hieronder het logo van het merk. Stem het palet af op de kleuren in dit logo:'});
+        parts.push({inlineData:{mimeType:mime, data:(lf.content||'').replace(/\s/g,'')}});
+      }
+    }
+  }catch(e){ /* geen/onleesbaar logo → tekst-only */ }
+  const body={systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts}],
+    generationConfig:{responseMimeType:'application/json',responseSchema:schema,temperature:0.9}};
   const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok){let m='';try{m=(await r.json()).error?.message||'';}catch{}throw new Error('Gemini '+r.status+(m?': '+m:''));}
   const data=await r.json();
@@ -217,11 +244,29 @@ function applyPalette(p){
   aiReasoning=(p.reasoning||'').trim();
   buildForm(); renderPreview();
 }
+/* Logo uploaden (SVG/PNG/JPG) → naar assets/, pad in site.json, instant preview. */
+async function uploadLogo(file, which){
+  if(!file) return;
+  try{
+    setStatus('Logo verwerken…','info');
+    const r=await readLogo(file);
+    const path='assets/logo'+(which==='white'?'-white':'')+'.'+r.ext;
+    if(which==='white') previewLogoWhite=r.dataUrl; else previewLogo=r.dataUrl;
+    renderPreview();
+    const sha=await fileSha(REPO, path);
+    await putB64(REPO, path, r.b64, 'Upload '+path+' (Theme Builder)', sha);
+    if(which==='white') site.logoWhite=path; else site.logo=path;
+    buildForm(); renderPreview();
+    setStatus('Logo geüpload ✓ — klik “Bak & publiceer” om live te zetten.','ok');
+  }catch(e){ setStatus('Upload mislukt: '+e.message,'err'); }
+}
 
 /* ── Live preview ─────────────────────────────────────────────────────────── */
 function renderPreview(){
   if(!T)return;
   const cfgm=Object.assign({},T.DEFAULTS,site);
+  if(previewLogo) cfgm.logo=previewLogo;
+  if(previewLogoWhite) cfgm.logoWhite=previewLogoWhite;
   const css=applyTokens(themeCss,tokens);
   const header=T.headerOuterHTML(cfgm,'index.html').replace(/ onerror="[^"]*"/g,'');
   const footer=T.footerOuterHTML(cfgm);
@@ -287,10 +332,17 @@ function buildForm(){
   // Merk & logo
   const fsBrand=el('fieldset',{},el('legend',{},'Merk & logo'));
   fsBrand.append(field('Merknaam',input(site.brand,v=>site.brand=v)));
-  fsBrand.append(field('Logo (pad in site-repo)',input(site.logo,v=>site.logo=v,'assets/logo.svg')));
-  fsBrand.append(field('Logo wit (footer)',input(site.logoWhite,v=>site.logoWhite=v,'assets/logo-white.svg')));
+  const fileCss='width:100%;padding:6px;border:1px solid var(--bd);border-radius:7px;font-size:12px;margin:3px 0 6px;box-sizing:border-box;';
+  const upLogo=el('input',{type:'file',accept:'image/*'}); upLogo.style.cssText=fileCss;
+  upLogo.addEventListener('change',()=>{ if(upLogo.files[0]) uploadLogo(upLogo.files[0],'logo'); });
+  fsBrand.append(field('Logo uploaden (SVG/PNG/JPG)',upLogo));
+  fsBrand.append(field('Logo-pad',input(site.logo,v=>{site.logo=v;previewLogo='';},'assets/logo.svg')));
+  const upLogoW=el('input',{type:'file',accept:'image/*'}); upLogoW.style.cssText=fileCss;
+  upLogoW.addEventListener('change',()=>{ if(upLogoW.files[0]) uploadLogo(upLogoW.files[0],'white'); });
+  fsBrand.append(field('Logo wit uploaden (footer, optioneel)',upLogoW));
+  fsBrand.append(field('Logo-wit-pad',input(site.logoWhite,v=>{site.logoWhite=v;previewLogoWhite='';},'assets/logo-white.svg')));
   fsBrand.append(field('Logo alt-tekst',input(site.logoAlt,v=>site.logoAlt=v)));
-  fsBrand.append(el('div',{class:'hint'},'Assets staan in de site-repo. Upload nieuwe logo\'s via de CMS (Afbeeldingen) of commit ze in assets/.'));
+  fsBrand.append(el('div',{class:'hint'},'Upload een logo (SVG/PNG/JPG) → het wordt meteen zichtbaar in de preview en geüpload. Klik daarna “Bak & publiceer”. Voor een PNG/JPG kiest de baker automatisch het juiste pad (bijv. assets/logo.png).'));
   f.append(fsBrand);
 
   // Kleuren & fonts
