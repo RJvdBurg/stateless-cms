@@ -1977,7 +1977,18 @@ async function doPublish() {
 
     // 3. Commit naar GitHub
     setStatus('Committen naar GitHub…');
-    const res = await GitHub.putFile(path, encodeBase64(content), message, state.current.sha);
+    let res;
+    try {
+      res = await GitHub.putFile(path, encodeBase64(content), message, state.current.sha);
+    } catch (err) {
+      // Verouderde sha (bestand buiten de editor gewijzigd, bijv. door herbakken) → verse sha halen en 1× opnieuw.
+      // De chrome is zojuist opnieuw gebakken uit het huidige theme, dus overschrijven behoudt je tekst-edit.
+      if (/\b409\b|does not match|is at .* but expected|sha/i.test(err.message)) {
+        setStatus('Nieuwere versie op GitHub — opnieuw met verse versie…');
+        const fresh = await GitHub.getFile(path);
+        res = await GitHub.putFile(path, encodeBase64(content), message, fresh.sha);
+      } else throw err;
+    }
 
     // 4. State bijwerken
     state.current.sha = res.content.sha;
@@ -2122,6 +2133,7 @@ async function bakePagesCore(commitMsg) {
 async function bakeAllPages() {
   if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
   if (!config.themeBase) { toast('Stel eerst "themeBase" in (cms.config.json).', 'error'); return; }
+  if (state.dirty && !confirm('⚠ Je hebt niet-opgeslagen wijzigingen in de editor.\n\nHerbakken werkt op de GEPUBLICEERDE bestanden — je huidige edit wordt NIET meegenomen en zou verloren gaan.\n\nAdvies: annuleer en klik eerst "Opslaan & Publiceer" (dat bakt de pagina al). Toch herbakken?')) return;
   if (!confirm('Alle HTML-pagina\'s opnieuw bakken tot platte, self-contained HTML?\n\nElke pagina wordt gecommit. De content in <main> blijft ongewijzigd; alleen de ingebakken chrome + inline CSS worden ververst.')) return;
   try {
     toast('Theme laden…', 'info', 2000);
