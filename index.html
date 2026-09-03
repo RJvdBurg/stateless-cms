@@ -1473,6 +1473,22 @@ function resetCopilot() {
   clearSelection();
 }
 
+/* Leesbare paginatekst (alleen <main>, zonder CSS/scripts) als context voor de AI. */
+function pageContextText(html) {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const root = doc.querySelector('main') || doc.body;
+    [...root.querySelectorAll('script,style')].forEach(e => e.remove());
+    return (root.textContent || '').replace(/\s+/g, ' ').trim();
+  } catch (e) { return ''; }
+}
+/* Markeer het geselecteerde fragment binnen de paginatekst met «». */
+function markSelection(text, sel) {
+  if (!sel) return text;
+  const i = text.indexOf(sel);
+  if (i < 0) return text + (text ? '\n\n' : '') + '[Geselecteerd fragment: «' + sel + '»]';
+  return text.slice(0, i) + '«' + sel + '»' + text.slice(i + sel.length);
+}
 async function askAI() {
   if (!state.current) return;
   if (!config.gemini) { toast('Stel eerst een Gemini API-sleutel in.', 'error'); openSettings('ai'); return; }
@@ -1484,8 +1500,9 @@ async function askAI() {
   $('#copilotBody').innerHTML = `<div class="loading-block"><div class="spinner dark"></div>${sel ? 'Geselecteerd fragment' : 'Content'} analyseren en suggesties genereren…</div>`;
 
   const { body } = splitFrontmatter($('#editor').value);
+  const pageCtx = pageContextText($('#editor').value).slice(0, 6000);
   const scope = sel
-    ? '\n\nJe taak: verbeter UITSLUITEND het onderstaande fragment. Behoud de betekenis, toon en eventuele opmaak. Geef in "suggested_text" alleen het verbeterde fragment terug (geen omringende tekst).'
+    ? '\n\nContext: hieronder staat de volledige tekst van de pagina; het fragment waar de gebruiker hulp bij wil is gemarkeerd met «». Je taak: bedenk of verbeter UITSLUITEND dat gemarkeerde fragment, kort en passend bij de rest van de pagina (bijvoorbeeld een treffend onderschrift bij een afbeelding). Als het fragment leeg of nietszeggend is, verzin dan zelf iets passends op basis van de pagina. Geef in "suggested_text" ALLEEN dat fragment terug — zonder aanhalingstekens en zonder «».'
     : '\n\nJe taak: verbeter de aangeleverde content. Geef in "suggested_text" de volledig herschreven versie (behoud markdown-opmaak waar aanwezig).';
   const sys = (config.sysPrompt || 'Je bent een ervaren Nederlandse SEO-copywriter en contentstrateeg.') +
     scope +
@@ -1495,7 +1512,7 @@ async function askAI() {
     '\n- "ai_eo_improvements": een array van 3-6 concrete verbeteringen voor AI-vindbaarheid (AI Engine Optimization): duidelijke structuur, feitelijke antwoorden, entiteiten, vraag-antwoord formuleringen, etc.';
 
   const userText = sel
-    ? `Verbeter dit fragment (bestand: ${state.current.path}):\n\n"""\n${sel}\n"""`
+    ? `Bestand: ${state.current.path}\nVolledige paginatekst (het te bewerken fragment staat tussen «»):\n\n"""\n${markSelection(pageCtx, sel)}\n"""`
     : `Hier is de content (bestand: ${state.current.path}):\n\n"""\n${body}\n"""`;
 
   try {
