@@ -143,6 +143,8 @@ input, textarea, select { font-family:inherit; font-size:14px; color:var(--n-800
 .repo-pill code { font-family:var(--font-mono); font-size:11.5px; color:var(--purple-500); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .topbar-spacer { flex:1; }
 .topbar-actions { display:flex; align-items:center; gap:8px; }
+.mini { border:none; background:#ececf3; border-radius:6px; width:28px; height:28px; cursor:pointer; font-size:13px; color:#555; flex:0 0 auto; }
+.mini:hover { background:#e0e0ea; }
 
 /* Main 3-column layout */
 .workspace { flex:1; display:flex; min-height:0; }
@@ -441,6 +443,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
       <button class="btn-icon" id="btnRefresh" title="Bestandsboom vernieuwen">⟳</button>
       <button class="btn btn-ghost" id="btnNewSite" title="Nieuwe website starten (nieuwe repo + theme)">➕ Nieuwe site</button>
       <button class="btn btn-ghost" id="btnNewPage" title="Nieuwe pagina maken (+ optioneel in het menu)">📄 Nieuwe pagina</button>
+      <button class="btn btn-ghost" id="btnSections" title="Secties herschikken/verwijderen/toevoegen (bibliotheek + AI)">🧩 Secties</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
       <button class="btn btn-ghost" id="btnThemeBuilder" title="Design & site.json visueel bewerken">🎨 Theme Builder</button>
       <button class="btn btn-ghost" id="btnBake" title="Alle pagina's opnieuw bakken — alleen nodig na een globale design/menu-wijziging">🧱 Alles herbakken</button>
@@ -2433,6 +2436,106 @@ function openNewSite(){
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   13e. SECTIE-MANAGER — overzicht, herschikken/verwijderen, bibliotheek + AI
+   Werkt op de <main>-content van de huidige HTML-pagina.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const SECTION_TEMPLATES = {
+  'Tekstblok': '<section class="section"><div class="container prose"><h2>Kop</h2><p>Vervang deze tekst met je eigen inhoud.</p></div></section>',
+  'Sectiekop + intro': '<section class="section"><div class="container"><div class="sec-head"><span class="label">LABEL</span><h2>Kop van de sectie</h2><p>Korte introductie onder de kop.</p></div></div></section>',
+  'Kaartjes (3)': '<section class="section tint"><div class="container"><div class="sec-head"><h2>Titel</h2></div><div class="regio-grid"><div class="card"><h3>Kaart 1</h3><p>Beschrijving.</p></div><div class="card"><h3>Kaart 2</h3><p>Beschrijving.</p></div><div class="card"><h3>Kaart 3</h3><p>Beschrijving.</p></div></div></div></section>',
+  'Foto + tekst': '<section class="section imgband"><div class="container"><div class="imgband-photo"><img src="assets/logo.png" alt=""></div><div class="imgband-txt"><span class="label">LABEL</span><h2>Kop</h2><p>Tekst naast de foto.</p><a class="btn btn-cta" href="contact.html">Knop</a></div></div></section>',
+  'Statistieken': '<section class="section"><div class="container"><div class="stat-grid"><div><div class="stat-num" data-target="100" data-suffix="+">0</div><div>Label</div></div><div><div class="stat-num" data-target="4.9" data-decimals="1">0</div><div>Label</div></div><div><div class="stat-num" data-target="250">0</div><div>Label</div></div></div></div></section>',
+  'Quote': '<section class="section"><div class="container prose"><blockquote class="quote">"Een korte, krachtige quote of testimonial."</blockquote></div></section>',
+  'FAQ': '<section class="section tint"><div class="container"><div class="sec-head"><h2>Veelgestelde vragen</h2></div><div class="faq"><details><summary>Vraag 1?</summary><p>Antwoord.</p></details><details><summary>Vraag 2?</summary><p>Antwoord.</p></details></div></div></section>',
+  'CTA-banner': '<section class="section cta-banner"><div class="container"><h2>Klaar om te beginnen?</h2><p>Een korte oproep tot actie.</p><a class="btn btn-white" href="contact.html">Neem contact op</a></div></section>'
+};
+function getMainBlocks() {
+  if (!state.current || !/\.html?$/.test(state.current.path)) return null;
+  const m = $('#editor').value.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+  if (!m) return null;
+  const doc = new DOMParser().parseFromString('<main>' + m[1] + '</main>', 'text/html');
+  return [...doc.querySelector('main').children].map(e => e.outerHTML);
+}
+function setMainBlocks(blocks) {
+  const inner = '\n' + blocks.join('\n') + '\n';
+  $('#editor').value = $('#editor').value.replace(/(<main[^>]*>)[\s\S]*?(<\/main>)/i, (mm, a, b) => a + inner + b);
+  state.dirty = true; updateFileMeta(); updatePreview(); updateButtons();
+}
+function blockLabel(html) {
+  const d = new DOMParser().parseFromString(html, 'text/html');
+  const h = d.querySelector('h1,h2,h3');
+  if (h && h.textContent.trim()) return h.textContent.trim().slice(0, 46);
+  const first = d.body.firstElementChild;
+  const cls = ((first && first.className) || '').split(' ').filter(c => c && c !== 'section' && c !== 'container')[0];
+  return cls || (first && first.tagName.toLowerCase()) || 'sectie';
+}
+async function aiSection(desc) {
+  const sys = 'Je bent een front-end developer die HTML-secties bouwt voor een bestaande website. ' +
+    'Gebruik UITSLUITEND deze bestaande CSS-klassen: section, "section tint", container, prose, sec-head, label, ' +
+    'card, regio-grid (responsieve kaart-grid), imgband + imgband-photo + imgband-txt, ' +
+    'stat-grid + stat-num (met data-target, optioneel data-suffix en data-decimals), quote, faq met <details><summary>, ' +
+    'cta-banner, btn met "btn-cta"/"btn-primary"/"btn-white", grad-text. ' +
+    'Bouw precies ÉÉN <section>…</section> in het Nederlands, semantisch, ZONDER inline styles (behalve img src) en ZONDER <script>. ' +
+    'Verzin passende, beknopte voorbeeldteksten. Geef enkel de HTML in het veld "html".';
+  const schema = { type: 'object', properties: { html: { type: 'string' } }, required: ['html'] };
+  const obj = Gemini.parseJson(await Gemini.generate('Maak een sectie: ' + desc, sys, schema));
+  let html = (obj.html || '').trim().replace(/<script[\s\S]*?<\/script>/gi, '');
+  if (!/^<section/i.test(html)) html = '<section class="section"><div class="container prose">' + html + '</div></section>';
+  return html;
+}
+function openSections() {
+  if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
+  const blocks = getMainBlocks();
+  if (!blocks) { toast('Open eerst een HTML-pagina met een <main>-sectie.', 'error'); return; }
+  const ov = el('div', { class:'sections-ov', style:'position:fixed;inset:0;background:rgba(20,20,30,.5);display:flex;align-items:center;justify-content:center;z-index:9999;' });
+  const box = el('div', { style:'background:#fff;border-radius:14px;max-width:560px;width:94%;max-height:90vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3);font-size:14px;' });
+  const list = el('div', {});
+  const apply = () => { setMainBlocks(blocks); draw(); };
+  function draw() {
+    list.innerHTML = '';
+    if (!blocks.length) list.append(el('div', { style:'color:#999;padding:8px 0;' }, 'Nog geen secties.'));
+    blocks.forEach((html, i) => {
+      const row = el('div', { style:'display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #eee;border-radius:8px;margin:5px 0;background:#fafafd;' });
+      row.append(
+        el('span', { style:'flex:1;font-size:13px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' }, (i+1)+'. '+blockLabel(html)),
+        el('button', { class:'mini', title:'Omhoog', onclick:()=>{ if(i>0){ blocks.splice(i-1,0,blocks.splice(i,1)[0]); apply(); } } }, '▲'),
+        el('button', { class:'mini', title:'Omlaag', onclick:()=>{ if(i<blocks.length-1){ blocks.splice(i+1,0,blocks.splice(i,1)[0]); apply(); } } }, '▼'),
+        el('button', { class:'mini', title:'Verwijderen', onclick:()=>{ if(confirm('Deze sectie verwijderen?')){ blocks.splice(i,1); apply(); } } }, '✕')
+      );
+      list.append(row);
+    });
+  }
+  draw();
+  // Bibliotheek
+  const tmplSel = el('select', { style:'flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:8px;' });
+  Object.keys(SECTION_TEMPLATES).forEach(n => tmplSel.append(el('option', { value:n }, n)));
+  const addTmpl = el('button', { class:'btn btn-ghost', onclick:()=>{ blocks.push(SECTION_TEMPLATES[tmplSel.value]); apply(); } }, '+ Invoegen');
+  // AI
+  const aiIn = el('input', { type:'text', placeholder:'bijv. 3 diensten in kaartjes met iconen', style:'flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:8px;' });
+  const aiBtn = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;' }, '✨ Genereer');
+  aiBtn.onclick = async () => {
+    if (!config.gemini) { toast('Stel eerst een Gemini-sleutel in (⚙ Instellingen).', 'error'); return; }
+    if (!aiIn.value.trim()) { toast('Beschrijf de sectie.', 'error'); return; }
+    aiBtn.disabled = true; const t0 = aiBtn.textContent; aiBtn.textContent = '✨ Bezig…';
+    try { blocks.push(await aiSection(aiIn.value.trim())); aiIn.value=''; apply(); toast('AI-sectie toegevoegd (onderaan).', 'success'); }
+    catch (e) { toast('AI mislukt: ' + e.message, 'error', 8000); }
+    finally { aiBtn.disabled = false; aiBtn.textContent = t0; }
+  };
+
+  box.append(
+    el('h2', { style:'margin:0 0 4px;color:#3E2E6D;font-size:18px;' }, '🧩 Secties'),
+    el('p', { style:'margin:0 0 12px;color:#777;font-size:13px;' }, 'Herschik of verwijder secties, of voeg een nieuwe toe. Wijzigingen komen in de editor — publiceer daarna zoals gewoonlijk.'),
+    list,
+    el('div', { style:'margin-top:14px;font-size:12px;color:#888;font-weight:600;' }, 'Uit bibliotheek'),
+    el('div', { style:'display:flex;gap:8px;margin-top:4px;' }, tmplSel, addTmpl),
+    el('div', { style:'margin-top:12px;font-size:12px;color:#888;font-weight:600;' }, '✨ AI-sectie (Gemini)'),
+    el('div', { style:'display:flex;gap:8px;margin-top:4px;' }, aiIn, aiBtn),
+    el('div', { style:'display:flex;justify-content:flex-end;margin-top:16px;' }, el('button', { class:'btn', style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;', onclick:()=>ov.remove() }, 'Klaar'))
+  );
+  ov.append(box); document.body.append(ov);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    14. EVENT WIRING
    ═══════════════════════════════════════════════════════════════════════════ */
 // Topbar
@@ -2440,6 +2543,7 @@ $('#btnSettings').onclick = () => openSettings();
 $('#btnImages').onclick = () => openImagesManager();
 $('#btnNewSite').onclick = () => openNewSite();
 $('#btnNewPage').onclick = () => openNewPage();
+$('#btnSections').onclick = () => openSections();
 $('#btnBake').onclick = () => bakeAllPages();
 $('#btnThemeBuilder').onclick = () => {
   const url = 'theme-builder.html' + (config.repo ? '?repo=' + encodeURIComponent(config.repo) : '');
