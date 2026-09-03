@@ -444,7 +444,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
       <button class="btn btn-ghost" id="btnNewSite" title="Nieuwe website starten (nieuwe repo + theme)">➕ Nieuwe site</button>
       <button class="btn btn-ghost" id="btnNewPage" title="Nieuwe pagina maken (+ optioneel in het menu)">📄 Nieuwe pagina</button>
       <button class="btn btn-ghost" id="btnSections" title="Secties herschikken/verwijderen/toevoegen (bibliotheek + AI)">🧩 Secties</button>
-      <button class="btn btn-ghost" id="btnLinks" title="Tekst + URL van knoppen/links op deze pagina aanpassen">🔗 Links</button>
+      <button class="btn btn-ghost" id="btnLinks" title="Links/knoppen (tekst + URL) en afbeeldingen in de content aanpassen/uploaden">🔗 Links &amp; foto's</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
       <button class="btn btn-ghost" id="btnThemeBuilder" title="Design & site.json visueel bewerken">🎨 Theme Builder</button>
       <button class="btn btn-ghost" id="btnBake" title="Alle pagina's opnieuw bakken — alleen nodig na een globale design/menu-wijziging">🧱 Alles herbakken</button>
@@ -2460,7 +2460,8 @@ const SECTION_TEMPLATES = {
   'Statistieken': '<section class="section"><div class="container"><div class="stat-grid"><div><div class="stat-num" data-target="100" data-suffix="+">0</div><div>Label</div></div><div><div class="stat-num" data-target="4.9" data-decimals="1">0</div><div>Label</div></div><div><div class="stat-num" data-target="250">0</div><div>Label</div></div></div></div></section>',
   'Quote': '<section class="section"><div class="container prose"><blockquote class="quote">"Een korte, krachtige quote of testimonial."</blockquote></div></section>',
   'FAQ': '<section class="section tint"><div class="container"><div class="sec-head"><h2>Veelgestelde vragen</h2></div><div class="faq"><details><summary>Vraag 1?</summary><p>Antwoord.</p></details><details><summary>Vraag 2?</summary><p>Antwoord.</p></details></div></div></section>',
-  'CTA-banner': '<section class="section cta-banner"><div class="container"><h2>Klaar om te beginnen?</h2><p>Een korte oproep tot actie.</p><a class="btn btn-white" href="contact.html">Neem contact op</a></div></section>'
+  'CTA-banner': '<section class="section cta-banner"><div class="container"><h2>Klaar om te beginnen?</h2><p>Een korte oproep tot actie.</p><a class="btn btn-white" href="contact.html">Neem contact op</a></div></section>',
+  'Carousel (afbeeldingen)': '<section class="section"><div class="container"><div class="sec-head"><h2>Galerij</h2></div><div class="carousel"><img src="assets/logo.png" alt=""><img src="assets/logo.png" alt=""><img src="assets/logo.png" alt=""><img src="assets/logo.png" alt=""><img src="assets/logo.png" alt=""><img src="assets/logo.png" alt=""></div></div></section>'
 };
 function getMainBlocks() {
   if (!state.current || !/\.html?$/.test(state.current.path)) return null;
@@ -2487,7 +2488,10 @@ async function aiSection(desc) {
     'Gebruik UITSLUITEND deze bestaande CSS-klassen: section, "section tint", container, prose, sec-head, label, ' +
     'card, regio-grid (responsieve kaart-grid), imgband + imgband-photo + imgband-txt, ' +
     'stat-grid + stat-num (met data-target, optioneel data-suffix en data-decimals), quote, faq met <details><summary>, ' +
-    'cta-banner, btn met "btn-cta"/"btn-primary"/"btn-white", grad-text. ' +
+    'cta-banner, btn met "btn-cta"/"btn-primary"/"btn-white", grad-text, ' +
+    'carousel = horizontaal scrollende galerij voor VEEL afbeeldingen: <div class="carousel"><img src="assets/..."><img src="assets/...">…</div> (voeg gerust 6+ items toe). ' +
+    'AFBEELDINGEN: gebruik ALTIJD src="assets/<naam>.jpg"-paden (relatief, in de site-repo) — NOOIT externe URLs, data-URI\'s of verzonnen paden buiten assets/. ' +
+    'De gebruiker vervangt de afbeeldingen daarna zelf in de CMS, dus placeholder-paden als assets/foto-1.jpg zijn prima. Zet altijd een alt-tekst. ' +
     'Bouw precies ÉÉN <section>…</section> in het Nederlands, semantisch, ZONDER inline styles (behalve img src) en ZONDER <script>. ' +
     'Verzin passende, beknopte voorbeeldteksten. Geef enkel de HTML in het veld "html".';
   const schema = { type: 'object', properties: { html: { type: 'string' } }, required: ['html'] };
@@ -2556,6 +2560,20 @@ function setMainInner(inner) {
   $('#editor').value = $('#editor').value.replace(/(<main[^>]*>)[\s\S]*?(<\/main>)/i, (mm, a, b) => a + '\n' + inner + '\n' + b);
   state.dirty = true; updateFileMeta(); updatePreview(); updateButtons();
 }
+async function uploadContentImage(file) {
+  const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+  const base = ((file.name.replace(/\.[^.]+$/, '') || 'afbeelding').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')) || 'afbeelding';
+  const path = 'assets/' + base + '.' + ext;
+  let sha; try { sha = (await GitHub.getFile(path)).sha; } catch (e) {}
+  const b64 = (ext === 'svg') ? encodeBase64(await file.text()) : arrayBufferToBase64(await file.arrayBuffer());
+  await GitHub.putFile(path, b64, 'Afbeelding via CMS: ' + path, sha);
+  return path;
+}
+function contentThumbUrl(src) {
+  if (/^(https?:|data:)/.test(src)) return src;
+  const [o, r] = config.repo.split('/');
+  return `https://raw.githubusercontent.com/${o}/${r}/${config.branch}/${src.replace(/^\//, '')}`;
+}
 function openLinks() {
   if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
   if (!state.current || !/\.html?$/.test(state.current.path)) { toast('Open eerst een HTML-pagina.', 'error'); return; }
@@ -2588,20 +2606,51 @@ function openLinks() {
     );
   });
 
+  // ── Afbeeldingen in de content ──
+  const imgs = [...main.querySelectorAll('img')];
+  const imgRows = [];
+  const imgWrap = el('div', {});
+  if (!imgs.length) imgWrap.append(el('div', { style:'color:#999;font-size:13px;' }, 'Geen afbeeldingen in de content.'));
+  imgs.forEach((img) => {
+    const cur = img.getAttribute('src') || '';
+    const thumb = el('img', { src: contentThumbUrl(cur), style:'width:56px;height:56px;object-fit:cover;border-radius:8px;background:#eee;flex:0 0 auto;' });
+    thumb.onerror = () => { thumb.style.opacity = '.25'; };
+    const srcIn = el('input', { type:'text', value: cur, placeholder:'assets/foto.jpg',
+      style:'width:100%;padding:7px 9px;border:1px solid #ddd;border-radius:7px;font-size:13px;box-sizing:border-box;' });
+    const file = el('input', { type:'file', accept:'image/*', style:'font-size:12px;margin-top:5px;' });
+    file.addEventListener('change', async () => {
+      if (!file.files[0]) return;
+      try { toast('Afbeelding uploaden…', 'info', 2000); const p = await uploadContentImage(file.files[0]); srcIn.value = p; thumb.src = contentThumbUrl(p) + '?t=' + Date.now(); thumb.style.opacity = '1'; toast('Geüpload: ' + p, 'success'); }
+      catch (e) { toast('Upload mislukt: ' + e.message, 'error', 7000); }
+    });
+    imgRows.push({ img, srcIn });
+    imgWrap.append(
+      el('div', { style:'display:flex;gap:10px;align-items:flex-start;border:1px solid #eee;border-radius:8px;padding:8px 10px;margin:6px 0;background:#fafafd;' },
+        thumb,
+        el('div', { style:'flex:1;min-width:0;' },
+          el('div', { style:'font-size:11px;color:#888;margin:0 0 2px;' }, 'Afbeelding (pad in assets/)'), srcIn, file)
+      )
+    );
+  });
+
   const btnApply = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;' }, 'Toepassen');
   btnApply.onclick = () => {
     rows.forEach(r => {
       const h = r.hrefIn.value.trim(); if (h) r.a.setAttribute('href', h);
       if (!r.hasEls) { const t = r.txtIn.value; if (t !== '' && t !== (r.a.textContent||'').trim()) r.a.textContent = t; }
     });
+    imgRows.forEach(r => { const s = r.srcIn.value.trim(); if (s) r.img.setAttribute('src', s); });
     setMainInner(main.innerHTML);
-    toast('Links bijgewerkt — publiceer om live te zetten.', 'success');
+    toast('Bijgewerkt — publiceer om live te zetten.', 'success');
     ov.remove();
   };
   box.append(
-    el('h2', { style:'margin:0 0 4px;color:#3E2E6D;font-size:18px;' }, '🔗 Links & knoppen'),
-    el('p', { style:'margin:0 0 12px;color:#777;font-size:13px;' }, 'Pas de tekst en de URL van elke knop/link op deze pagina aan. (Knoppen in de header/footer wijzig je in de Theme Builder.)'),
+    el('h2', { style:'margin:0 0 4px;color:#3E2E6D;font-size:18px;' }, '🔗 Links & afbeeldingen'),
+    el('p', { style:'margin:0 0 12px;color:#777;font-size:13px;' }, 'Pas de tekst/URL van knoppen en links aan, en wissel of upload afbeeldingen (bijv. in een carousel). Header/footer wijzig je in de Theme Builder.'),
+    el('div', { style:'font-size:12px;color:#888;font-weight:600;margin-bottom:2px;' }, 'Links & knoppen'),
     listWrap,
+    el('div', { style:'font-size:12px;color:#888;font-weight:600;margin:12px 0 2px;' }, 'Afbeeldingen'),
+    imgWrap,
     el('div', { style:'display:flex;gap:8px;justify-content:flex-end;margin-top:14px;' },
       el('button', { class:'btn btn-ghost', onclick:()=>ov.remove() }, 'Annuleren'), btnApply)
   );
