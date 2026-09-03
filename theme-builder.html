@@ -392,10 +392,23 @@ function buildForm(){
   fsCol.append(el('div',{class:'hint'},'Kleuren/fonts worden opgeslagen in theme.css (theme-repo). Nieuwe fonts moeten in theme.css ge-@import worden.'));
   f.append(fsCol);
 
-  // CTA
-  const fsCta=el('fieldset',{},el('legend',{},'Actieknop (CTA)'));
-  fsCta.append(field('Label',input(site.cta.label,v=>site.cta.label=v)));
-  fsCta.append(field('Link',input(site.cta.href,v=>site.cta.href=v,'contact.html')));
+  // CTA (knop rechtsboven in de header)
+  const fsCta=el('fieldset',{},el('legend',{},'Actieknop (rechtsboven)'));
+  const ctaOn=!!(site.cta && site.cta.label);
+  const ctaCb=el('input',{type:'checkbox'}); ctaCb.checked=ctaOn; ctaCb.style.cssText='margin-right:6px;vertical-align:middle;';
+  const ctaLabel=input(site.cta.label,v=>site.cta.label=v);
+  const ctaHref=input(site.cta.href,v=>site.cta.href=v,'contact.html');
+  ctaLabel.disabled=!ctaOn; ctaHref.disabled=!ctaOn;
+  ctaCb.addEventListener('change',()=>{
+    if(ctaCb.checked){ if(!site.cta.label) site.cta.label='Contact'; ctaLabel.value=site.cta.label; }
+    else { site.cta.label=''; }
+    ctaLabel.disabled=ctaHref.disabled=!ctaCb.checked;
+    schedulePreview();
+  });
+  fsCta.append(el('label',{style:'display:block;margin:2px 0 8px;font-size:13px;'},ctaCb,'Knop tonen'));
+  fsCta.append(field('Tekst',ctaLabel));
+  fsCta.append(field('Link',ctaHref));
+  fsCta.append(el('div',{class:'hint'},'De knop staat vast rechtsboven in de header. Wil je de actie ergens anders? Zet deze uit en voeg een menu-item toe (Menu) of een CTA-sectie op de pagina (🧩 Secties in de CMS).'));
   f.append(fsCta);
 
   // Menu
