@@ -2606,12 +2606,17 @@ function openLinks() {
     );
   });
 
-  // ── Afbeeldingen in de content ──
+  // ── Afbeeldingen in de content, GEGROEPEERD per carousel ──
   const imgs = [...main.querySelectorAll('img')];
   const imgRows = [];
-  const imgWrap = el('div', {});
-  if (!imgs.length) imgWrap.append(el('div', { style:'color:#999;font-size:13px;' }, 'Geen afbeeldingen in de content.'));
-  imgs.forEach((img) => {
+  const applyCurrent = () => {
+    rows.forEach(r => {
+      const h = r.hrefIn.value.trim(); if (h) r.a.setAttribute('href', h);
+      if (!r.hasEls) { const t = r.txtIn.value; if (t !== '' && t !== (r.a.textContent||'').trim()) r.a.textContent = t; }
+    });
+    imgRows.forEach(r => { const s = r.srcIn.value.trim(); if (s) r.img.setAttribute('src', s); });
+  };
+  function makeImgRow(img) {
     const cur = img.getAttribute('src') || '';
     const thumb = el('img', { src: contentThumbUrl(cur), style:'width:56px;height:56px;object-fit:cover;border-radius:8px;background:#eee;flex:0 0 auto;' });
     thumb.onerror = () => { thumb.style.opacity = '.25'; };
@@ -2626,46 +2631,36 @@ function openLinks() {
     const delBtn = el('button', { class:'mini', title:'Foto verwijderen', style:'flex:0 0 auto;align-self:center;',
       onclick: () => {
         if (!confirm('Deze foto verwijderen?')) return;
-        applyCurrent();
-        img.remove();
-        setMainInner(main.innerHTML);
-        ov.remove(); openLinks();
-        toast('Foto verwijderd.', 'info');
+        applyCurrent(); img.remove(); setMainInner(main.innerHTML); ov.remove(); openLinks(); toast('Foto verwijderd.', 'info');
       } }, '✕');
     imgRows.push({ img, srcIn });
-    imgWrap.append(
-      el('div', { style:'display:flex;gap:10px;align-items:flex-start;border:1px solid #eee;border-radius:8px;padding:8px 10px;margin:6px 0;background:#fafafd;' },
-        thumb,
-        el('div', { style:'flex:1;min-width:0;' },
-          el('div', { style:'font-size:11px;color:#888;margin:0 0 2px;' }, 'Afbeelding (pad in assets/)'), srcIn, file),
-        delBtn
-      )
-    );
-  });
+    return el('div', { style:'display:flex;gap:10px;align-items:flex-start;border:1px solid #eee;border-radius:8px;padding:8px 10px;margin:6px 0;background:#fff;' },
+      thumb, el('div', { style:'flex:1;min-width:0;' }, el('div', { style:'font-size:11px;color:#888;margin:0 0 2px;' }, 'Afbeelding (pad in assets/)'), srcIn, file), delBtn);
+  }
 
-  // huidige veld-wijzigingen naar de geparste DOM schrijven (gedeeld door Toepassen + "foto toevoegen")
-  const applyCurrent = () => {
-    rows.forEach(r => {
-      const h = r.hrefIn.value.trim(); if (h) r.a.setAttribute('href', h);
-      if (!r.hasEls) { const t = r.txtIn.value; if (t !== '' && t !== (r.a.textContent||'').trim()) r.a.textContent = t; }
-    });
-    imgRows.forEach(r => { const s = r.srcIn.value.trim(); if (s) r.img.setAttribute('src', s); });
-  };
-
-  // ── Foto toevoegen aan een carousel ──
+  const imgGroups = el('div', {});
   const carousels = [...main.querySelectorAll('.carousel')];
-  const carWrap = el('div', {});
+  const inCar = new Set();
   carousels.forEach((car, ci) => {
-    carWrap.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;margin:4px 6px 0 0;',
-      onclick: () => {
-        applyCurrent();
-        const im = doc.createElement('img'); im.setAttribute('src', 'assets/logo.png'); im.setAttribute('alt', '');
-        car.appendChild(im);
-        setMainInner(main.innerHTML);
-        ov.remove(); openLinks();
-        toast('Leeg fotoslot toegevoegd — kies/upload er een foto in.', 'info', 4000);
-      } }, '➕ Foto toevoegen' + (carousels.length > 1 ? ' aan carousel #' + (ci + 1) : ' aan carousel')));
+    const carImgs = [...car.querySelectorAll('img')];
+    carImgs.forEach(i => inCar.add(i));
+    const grp = el('div', { style:'border:1px dashed #cfcfe0;border-radius:10px;padding:8px 10px;margin:8px 0;background:#fafafd;' });
+    grp.append(el('div', { style:'font-weight:600;font-size:12px;color:#3E2E6D;margin-bottom:4px;' }, '🎠 Carousel #' + (ci+1) + ' — ' + carImgs.length + ' foto\'s'));
+    if (!carImgs.length) grp.append(el('div', { style:'color:#999;font-size:12px;' }, 'Nog geen foto\'s.'));
+    carImgs.forEach(i => grp.append(makeImgRow(i)));
+    grp.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;margin-top:6px;',
+      onclick: () => { applyCurrent(); const im = doc.createElement('img'); im.setAttribute('src', 'assets/logo.png'); im.setAttribute('alt', ''); car.appendChild(im); setMainInner(main.innerHTML); ov.remove(); openLinks(); toast('Fotoslot toegevoegd aan carousel #' + (ci+1) + '.', 'info', 4000); }
+    }, '➕ Foto toevoegen aan deze carousel'));
+    imgGroups.append(grp);
   });
+  const others = imgs.filter(i => !inCar.has(i));
+  if (others.length) {
+    const grp = el('div', { style:'margin:8px 0;' });
+    grp.append(el('div', { style:'font-weight:600;font-size:12px;color:#666;margin-bottom:4px;' }, 'Overige afbeeldingen'));
+    others.forEach(i => grp.append(makeImgRow(i)));
+    imgGroups.append(grp);
+  }
+  if (!imgs.length) imgGroups.append(el('div', { style:'color:#999;font-size:13px;' }, 'Geen afbeeldingen in de content.'));
 
   const btnApply = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;' }, 'Toepassen');
   btnApply.onclick = () => {
@@ -2676,12 +2671,11 @@ function openLinks() {
   };
   box.append(
     el('h2', { style:'margin:0 0 4px;color:#3E2E6D;font-size:18px;' }, '🔗 Links & afbeeldingen'),
-    el('p', { style:'margin:0 0 12px;color:#777;font-size:13px;' }, 'Pas de tekst/URL van knoppen en links aan, en wissel of upload afbeeldingen (bijv. in een carousel). Header/footer wijzig je in de Theme Builder.'),
+    el('p', { style:'margin:0 0 12px;color:#777;font-size:13px;' }, 'Pas de tekst/URL van knoppen en links aan, en beheer afbeeldingen per carousel (toevoegen · wisselen · uploaden · verwijderen). Header/footer wijzig je in de Theme Builder.'),
     el('div', { style:'font-size:12px;color:#888;font-weight:600;margin-bottom:2px;' }, 'Links & knoppen'),
     listWrap,
-    el('div', { style:'font-size:12px;color:#888;font-weight:600;margin:12px 0 2px;' }, 'Afbeeldingen'),
-    imgWrap,
-    carousels.length ? carWrap : el('span'),
+    el('div', { style:'font-size:12px;color:#888;font-weight:600;margin:12px 0 2px;' }, 'Afbeeldingen (per carousel)'),
+    imgGroups,
     el('div', { style:'display:flex;gap:8px;justify-content:flex-end;margin-top:14px;' },
       el('button', { class:'btn btn-ghost', onclick:()=>ov.remove() }, 'Annuleren'), btnApply)
   );
