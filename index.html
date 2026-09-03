@@ -2633,7 +2633,15 @@ function openLinks() {
     });
     imgRows.forEach(r => { const s = r.srcIn.value.trim(); if (s) r.img.setAttribute('src', s); });
   };
-  function makeImgRow(img) {
+  // Dichtstbijzijnde container (onder <main>) die ≥2 afbeeldingen bevat = de "fotogroep".
+  function groupContainer(img) {
+    let e = img.parentElement;
+    while (e && e !== main) { if (e.querySelectorAll('img').length >= 2) return e; e = e.parentElement; }
+    return null;
+  }
+  // Het "item" van een afbeelding binnen zijn groep (bijv. de .card die de img omvat).
+  function itemOf(img, container) { let e = img; while (e && e.parentElement && e.parentElement !== container) e = e.parentElement; return e || img; }
+  function makeImgRow(img, container) {
     const cur = img.getAttribute('src') || '';
     const thumb = el('img', { src: contentThumbUrl(cur), style:'width:56px;height:56px;object-fit:cover;border-radius:8px;background:#eee;flex:0 0 auto;' });
     thumb.onerror = () => { thumb.style.opacity = '.25'; };
@@ -2648,33 +2656,43 @@ function openLinks() {
     const delBtn = el('button', { class:'mini', title:'Foto verwijderen', style:'flex:0 0 auto;align-self:center;',
       onclick: () => {
         if (!confirm('Deze foto verwijderen?')) return;
-        applyCurrent(); img.remove(); setMainInner(main.innerHTML); ov.remove(); openLinks(); toast('Foto verwijderd.', 'info');
+        applyCurrent(); (container ? itemOf(img, container) : img).remove(); setMainInner(main.innerHTML); ov.remove(); openLinks(); toast('Foto verwijderd.', 'info');
       } }, '✕');
     imgRows.push({ img, srcIn });
     return el('div', { style:'display:flex;gap:10px;align-items:flex-start;border:1px solid #eee;border-radius:8px;padding:8px 10px;margin:6px 0;background:#fff;' },
       thumb, el('div', { style:'flex:1;min-width:0;' }, el('div', { style:'font-size:11px;color:#888;margin:0 0 2px;' }, 'Afbeelding (pad in assets/)'), srcIn, file), delBtn);
   }
 
+  // Groepeer alle afbeeldingen op hun fotogroep-container (carousel, grid, of elke container met ≥2 imgs).
   const imgGroups = el('div', {});
-  const carousels = [...main.querySelectorAll('.carousel')];
-  const inCar = new Set();
-  carousels.forEach((car, ci) => {
-    const carImgs = [...car.querySelectorAll('img')];
-    carImgs.forEach(i => inCar.add(i));
+  const groupsMap = new Map();
+  const ungrouped = [];
+  imgs.forEach(im => { const c = groupContainer(im); if (c) { if (!groupsMap.has(c)) groupsMap.set(c, []); groupsMap.get(c).push(im); } else ungrouped.push(im); });
+  let gi = 0;
+  groupsMap.forEach((gimgs, container) => {
+    gi++;
+    const kind = container.classList.contains('carousel') ? '🎠 Carousel'
+      : (/regio-grid|card-grid|grid/.test(container.className) ? '🖼 Fotogrid' : '🖼 Fotogroep');
     const grp = el('div', { style:'border:1px dashed #cfcfe0;border-radius:10px;padding:8px 10px;margin:8px 0;background:#fafafd;' });
-    grp.append(el('div', { style:'font-weight:600;font-size:12px;color:#3E2E6D;margin-bottom:4px;' }, '🎠 Carousel #' + (ci+1) + ' — ' + carImgs.length + ' foto\'s'));
-    if (!carImgs.length) grp.append(el('div', { style:'color:#999;font-size:12px;' }, 'Nog geen foto\'s.'));
-    carImgs.forEach(i => grp.append(makeImgRow(i)));
+    grp.append(el('div', { style:'font-weight:600;font-size:12px;color:#3E2E6D;margin-bottom:4px;' }, kind + ' #' + gi + ' — ' + gimgs.length + ' foto\'s'));
+    gimgs.forEach(im => grp.append(makeImgRow(im, container)));
     grp.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;margin-top:6px;',
-      onclick: () => { applyCurrent(); const im = doc.createElement('img'); im.setAttribute('src', 'assets/logo.png'); im.setAttribute('alt', ''); car.appendChild(im); setMainInner(main.innerHTML); ov.remove(); openLinks(); toast('Fotoslot toegevoegd aan carousel #' + (ci+1) + '.', 'info', 4000); }
-    }, '➕ Foto toevoegen aan deze carousel'));
+      onclick: () => {
+        applyCurrent();
+        // kloon het laatste item MET een afbeelding (behoudt structuur, bijv. een .card)
+        const items = [...container.children].filter(ch => ch.tagName === 'IMG' || (ch.querySelector && ch.querySelector('img')));
+        const clone = items.length ? items[items.length - 1].cloneNode(true) : (function(){ const im = doc.createElement('img'); im.setAttribute('alt',''); return im; })();
+        const cimg = clone.tagName === 'IMG' ? clone : clone.querySelector('img');
+        if (cimg) cimg.setAttribute('src', 'assets/logo.png');
+        container.appendChild(clone);
+        setMainInner(main.innerHTML); ov.remove(); openLinks(); toast('Fotoslot toegevoegd aan groep #' + gi + '.', 'info', 4000);
+      } }, '➕ Foto toevoegen aan deze groep'));
     imgGroups.append(grp);
   });
-  const others = imgs.filter(i => !inCar.has(i));
-  if (others.length) {
+  if (ungrouped.length) {
     const grp = el('div', { style:'margin:8px 0;' });
-    grp.append(el('div', { style:'font-weight:600;font-size:12px;color:#666;margin-bottom:4px;' }, 'Overige afbeeldingen'));
-    others.forEach(i => grp.append(makeImgRow(i)));
+    grp.append(el('div', { style:'font-weight:600;font-size:12px;color:#666;margin-bottom:4px;' }, 'Losse afbeeldingen'));
+    ungrouped.forEach(im => grp.append(makeImgRow(im, null)));
     imgGroups.append(grp);
   }
   if (!imgs.length) imgGroups.append(el('div', { style:'color:#999;font-size:13px;' }, 'Geen afbeeldingen in de content.'));
@@ -2691,7 +2709,7 @@ function openLinks() {
     el('p', { style:'margin:0 0 12px;color:#777;font-size:13px;' }, 'Pas de tekst/URL van knoppen en links aan, en beheer afbeeldingen per carousel (toevoegen · wisselen · uploaden · verwijderen). Header/footer wijzig je in de Theme Builder.'),
     el('div', { style:'font-size:12px;color:#888;font-weight:600;margin-bottom:2px;' }, 'Links & knoppen'),
     listWrap,
-    el('div', { style:'font-size:12px;color:#888;font-weight:600;margin:12px 0 2px;' }, 'Afbeeldingen (per carousel)'),
+    el('div', { style:'font-size:12px;color:#888;font-weight:600;margin:12px 0 2px;' }, 'Afbeeldingen (per fotogroep)'),
     imgGroups,
     el('div', { style:'display:flex;gap:8px;justify-content:flex-end;margin-top:14px;' },
       el('button', { class:'btn btn-ghost', onclick:()=>ov.remove() }, 'Annuleren'), btnApply)
