@@ -143,6 +143,44 @@ function applyTokens(css,t){
   return css;
 }
 
+/* ── Lettertypen (curated Google Fonts die betrouwbaar laden) ─────────────── */
+const FONTS = {
+  'Inter':{q:'Inter:wght@400;500;600;700',cat:'sans'},
+  'Poppins':{q:'Poppins:wght@400;500;600;700',cat:'sans'},
+  'Montserrat':{q:'Montserrat:wght@400;500;600;700',cat:'sans'},
+  'Work Sans':{q:'Work+Sans:wght@400;500;600;700',cat:'sans'},
+  'DM Sans':{q:'DM+Sans:wght@400;500;700',cat:'sans'},
+  'Raleway':{q:'Raleway:wght@400;500;600;700',cat:'sans'},
+  'Nunito':{q:'Nunito:wght@400;600;700',cat:'sans'},
+  'Nunito Sans':{q:'Nunito+Sans:wght@400;600;700',cat:'sans'},
+  'Roboto':{q:'Roboto:wght@300;400;500;700',cat:'sans'},
+  'Source Sans 3':{q:'Source+Sans+3:wght@400;600;700',cat:'sans'},
+  'Space Grotesk':{q:'Space+Grotesk:wght@400;500;700',cat:'sans'},
+  'Manrope':{q:'Manrope:wght@400;500;600;700',cat:'sans'},
+  'Playfair Display':{q:'Playfair+Display:wght@400;600;700',cat:'serif'},
+  'Merriweather':{q:'Merriweather:wght@400;700',cat:'serif'},
+  'Lora':{q:'Lora:wght@400;500;600;700',cat:'serif'},
+  'Roboto Slab':{q:'Roboto+Slab:wght@400;600;700',cat:'serif'},
+  'DM Serif Display':{q:'DM+Serif+Display',cat:'serif'},
+  'Libre Baskerville':{q:'Libre+Baskerville:wght@400;700',cat:'serif'},
+  'Cormorant Garamond':{q:'Cormorant+Garamond:wght@400;500;600;700',cat:'serif'}
+};
+function fontName(v){ const m=(v||'').match(/^\s*'([^']+)'|^\s*"([^"]+)"|^\s*([^,]+)/); return ((m&&(m[1]||m[2]||m[3]))||'').trim(); }
+function resolveFont(name){ if(!name) return null; const k=Object.keys(FONTS).find(f=>f.toLowerCase()===String(name).trim().toLowerCase()); return k||null; }
+function fontStack(cat){ return cat==='serif' ? ", Georgia, serif" : ", 'Helvetica Neue', Arial, sans-serif"; }
+/* Zet de lettertypen: werkt het @import in themeCss bij én de --fdisplay/--fbody-tokens. */
+function setThemeFonts(displayName, bodyName){
+  const d=FONTS[displayName], b=FONTS[bodyName], qs=[];
+  if(d) qs.push(d.q); if(b && bodyName!==displayName) qs.push(b.q);
+  if(qs.length){
+    const imp="@import url('https://fonts.googleapis.com/css2?family="+qs.join('&family=')+"&display=swap');";
+    if(/@import url\([^)]*\);/.test(themeCss)) themeCss=themeCss.replace(/@import url\([^)]*\);/, imp);
+    else themeCss=imp+"\n"+themeCss;
+  }
+  if(displayName) tokens.fdisplay="'"+displayName+"'"+(d?fontStack(d.cat):", sans-serif");
+  if(bodyName) tokens.fbody="'"+bodyName+"'"+(b?fontStack(b.cat):", sans-serif");
+}
+
 /* ── AI-kleurenpalet (Gemini) ─────────────────────────────────────────────── */
 function normHex(v){ v=(v||'').trim(); if(/^[0-9a-fA-F]{6}$/.test(v))v='#'+v; return /^#[0-9a-fA-F]{6}$/.test(v)?v:null; }
 async function geminiPalette(desc){
@@ -152,12 +190,15 @@ async function geminiPalette(desc){
   const url='https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+encodeURIComponent(cfg.gemini);
   const schema={type:'object',properties:{
     primary:{type:'string'},accent:{type:'string'},secondary:{type:'string'},
-    gradient:{type:'array',items:{type:'string'}},reasoning:{type:'string'}
+    gradient:{type:'array',items:{type:'string'}},
+    fontDisplay:{type:'string'},fontBody:{type:'string'},reasoning:{type:'string'}
   },required:['primary','accent','secondary','gradient']};
-  const sys='Je bent een ervaren merk- en UI-designer. Genereer een samenhangend, toegankelijk kleurenpalet voor een website. '+
+  const sys='Je bent een ervaren merk- en UI-designer. Genereer een samenhangend, toegankelijk kleurenpalet + lettertype-paar voor een website. '+
     'primary = diepe hoofdkleur (koppen/navigatie/tekst-accent), accent = opvallende kleur voor knoppen/CTA, '+
     'secondary = ondersteunende kleur. gradient = precies 3 hex-kleuren die vloeiend combineren (meestal accent → tussenkleur → secondary). '+
     'Gebruik altijd 6-cijferige hex (#rrggbb). Zorg voor voldoende contrast met een witte achtergrond, en witte tekst moet leesbaar zijn op accent. '+
+    'fontDisplay = lettertype voor koppen, fontBody = lettertype voor lopende tekst (goed leesbaar). Kies BEIDE UITSLUITEND uit deze lijst, '+
+    'exact zoals geschreven: '+Object.keys(FONTS).join(', ')+'. Combineer smaakvol (bijv. een expressieve display + een neutrale sans voor tekst). '+
     'Houd reasoning tot max 1 korte zin.';
   const body={systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text:'Beschrijving van het merk/de gewenste sfeer: '+desc}]}],
     generationConfig:{responseMimeType:'application/json',responseSchema:schema,temperature:0.95}};
@@ -171,6 +212,8 @@ function applyPalette(p){
   const s=(k,v)=>{const h=normHex(v);if(h)tokens[k]=h;};
   s('purple',p.primary); s('pink',p.accent); s('teal',p.secondary);
   if(Array.isArray(p.gradient)){ s('g0',p.gradient[0]); s('g1',p.gradient[1]); s('g2',p.gradient[2]); }
+  const rd=resolveFont(p.fontDisplay), rb=resolveFont(p.fontBody);
+  if(rd || rb) setThemeFonts(rd || fontName(tokens.fdisplay), rb || fontName(tokens.fbody));
   aiReasoning=(p.reasoning||'').trim();
   buildForm(); renderPreview();
 }
@@ -282,9 +325,16 @@ function buildForm(){
   fsCol.append(colorRow('Stop 1','g0'));
   fsCol.append(colorRow('Stop 2 (midden)','g1'));
   fsCol.append(colorRow('Stop 3','g2'));
-  fsCol.append(el('div',{class:'grp'},'Lettertypen (CSS font-family)'));
-  fsCol.append(field('Koppen (display)',input(tokens.fdisplay,v=>{tokens.fdisplay=v;})));
-  fsCol.append(field('Tekst (body)',input(tokens.fbody,v=>{tokens.fbody=v;})));
+  fsCol.append(el('div',{class:'grp'},'Lettertypen'));
+  const fontSelect=(current,onPick)=>{
+    const sel=el('select',{}); sel.style.cssText='width:100%;padding:7px 9px;border:1px solid var(--bd);border-radius:7px;font-size:13px;';
+    if(current && !FONTS[current]) sel.append(el('option',{value:current},current+' (huidig)'));
+    Object.keys(FONTS).forEach(n=>sel.append(el('option',{value:n},n+' · '+FONTS[n].cat)));
+    sel.value=current||''; sel.addEventListener('change',()=>onPick(sel.value)); return sel;
+  };
+  const curDisp=fontName(tokens.fdisplay), curBody=fontName(tokens.fbody);
+  fsCol.append(field('Koppen (display)',fontSelect(curDisp,v=>{setThemeFonts(v,fontName(tokens.fbody));buildForm();renderPreview();})));
+  fsCol.append(field('Tekst (body)',fontSelect(curBody,v=>{setThemeFonts(fontName(tokens.fdisplay),v);buildForm();renderPreview();})));
   fsCol.append(field('Max. site-breedte',input(tokens.maxw,v=>{tokens.maxw=v;},'1140px')));
   fsCol.append(el('div',{class:'hint'},'Kleuren/fonts worden opgeslagen in theme.css (theme-repo). Nieuwe fonts moeten in theme.css ge-@import worden.'));
   f.append(fsCol);
