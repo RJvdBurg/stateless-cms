@@ -2633,13 +2633,33 @@ function openLinks() {
     );
   });
 
-  const btnApply = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;' }, 'Toepassen');
-  btnApply.onclick = () => {
+  // huidige veld-wijzigingen naar de geparste DOM schrijven (gedeeld door Toepassen + "foto toevoegen")
+  const applyCurrent = () => {
     rows.forEach(r => {
       const h = r.hrefIn.value.trim(); if (h) r.a.setAttribute('href', h);
       if (!r.hasEls) { const t = r.txtIn.value; if (t !== '' && t !== (r.a.textContent||'').trim()) r.a.textContent = t; }
     });
     imgRows.forEach(r => { const s = r.srcIn.value.trim(); if (s) r.img.setAttribute('src', s); });
+  };
+
+  // ── Foto toevoegen aan een carousel ──
+  const carousels = [...main.querySelectorAll('.carousel')];
+  const carWrap = el('div', {});
+  carousels.forEach((car, ci) => {
+    carWrap.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;margin:4px 6px 0 0;',
+      onclick: () => {
+        applyCurrent();
+        const im = doc.createElement('img'); im.setAttribute('src', 'assets/logo.png'); im.setAttribute('alt', '');
+        car.appendChild(im);
+        setMainInner(main.innerHTML);
+        ov.remove(); openLinks();
+        toast('Leeg fotoslot toegevoegd — kies/upload er een foto in.', 'info', 4000);
+      } }, '➕ Foto toevoegen' + (carousels.length > 1 ? ' aan carousel #' + (ci + 1) : ' aan carousel')));
+  });
+
+  const btnApply = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;' }, 'Toepassen');
+  btnApply.onclick = () => {
+    applyCurrent();
     setMainInner(main.innerHTML);
     toast('Bijgewerkt — publiceer om live te zetten.', 'success');
     ov.remove();
@@ -2651,6 +2671,7 @@ function openLinks() {
     listWrap,
     el('div', { style:'font-size:12px;color:#888;font-weight:600;margin:12px 0 2px;' }, 'Afbeeldingen'),
     imgWrap,
+    carousels.length ? carWrap : el('span'),
     el('div', { style:'display:flex;gap:8px;justify-content:flex-end;margin-top:14px;' },
       el('button', { class:'btn btn-ghost', onclick:()=>ov.remove() }, 'Annuleren'), btnApply)
   );
