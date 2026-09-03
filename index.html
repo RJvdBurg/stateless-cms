@@ -2623,12 +2623,22 @@ function openLinks() {
       try { toast('Afbeelding uploaden…', 'info', 2000); const p = await uploadContentImage(file.files[0]); srcIn.value = p; thumb.src = contentThumbUrl(p) + '?t=' + Date.now(); thumb.style.opacity = '1'; toast('Geüpload: ' + p, 'success'); }
       catch (e) { toast('Upload mislukt: ' + e.message, 'error', 7000); }
     });
+    const delBtn = el('button', { class:'mini', title:'Foto verwijderen', style:'flex:0 0 auto;align-self:center;',
+      onclick: () => {
+        if (!confirm('Deze foto verwijderen?')) return;
+        applyCurrent();
+        img.remove();
+        setMainInner(main.innerHTML);
+        ov.remove(); openLinks();
+        toast('Foto verwijderd.', 'info');
+      } }, '✕');
     imgRows.push({ img, srcIn });
     imgWrap.append(
       el('div', { style:'display:flex;gap:10px;align-items:flex-start;border:1px solid #eee;border-radius:8px;padding:8px 10px;margin:6px 0;background:#fafafd;' },
         thumb,
         el('div', { style:'flex:1;min-width:0;' },
-          el('div', { style:'font-size:11px;color:#888;margin:0 0 2px;' }, 'Afbeelding (pad in assets/)'), srcIn, file)
+          el('div', { style:'font-size:11px;color:#888;margin:0 0 2px;' }, 'Afbeelding (pad in assets/)'), srcIn, file),
+        delBtn
       )
     );
   });
