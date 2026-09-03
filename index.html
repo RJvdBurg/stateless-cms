@@ -2676,7 +2676,8 @@ function openLinks() {
     const grp = el('div', { style:'border:1px dashed #cfcfe0;border-radius:10px;padding:8px 10px;margin:8px 0;background:#fafafd;' });
     grp.append(el('div', { style:'font-weight:600;font-size:12px;color:#3E2E6D;margin-bottom:4px;' }, kind + ' #' + gi + ' — ' + gimgs.length + ' foto\'s'));
     gimgs.forEach(im => grp.append(makeImgRow(im, container)));
-    grp.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;margin-top:6px;',
+    const btnRow = el('div', { style:'margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;' });
+    btnRow.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;',
       onclick: () => {
         applyCurrent();
         // kloon het laatste item MET een afbeelding (behoudt structuur, bijv. een .card)
@@ -2686,7 +2687,18 @@ function openLinks() {
         if (cimg) cimg.setAttribute('src', 'assets/logo.png');
         container.appendChild(clone);
         setMainInner(main.innerHTML); ov.remove(); openLinks(); toast('Fotoslot toegevoegd aan groep #' + gi + '.', 'info', 4000);
-      } }, '➕ Foto toevoegen aan deze groep'));
+      } }, '➕ Foto toevoegen'));
+    if (!container.classList.contains('carousel')) {
+      btnRow.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;', title:'Toont de foto\'s in een horizontaal scrollende rij (ook op mobiel)',
+        onclick: () => {
+          applyCurrent();
+          container.classList.remove('regio-grid', 'card-grid', 'grid', 'grid-2', 'grid-3', 'grid-4');
+          container.classList.add('carousel');
+          setMainInner(main.innerHTML); ov.remove(); openLinks();
+          toast('Omgezet naar carousel — horizontaal scrollen. Publiceer om live te zetten.', 'success', 6000);
+        } }, '🎠 Omzetten naar carousel'));
+    }
+    grp.append(btnRow);
     imgGroups.append(grp);
   });
   if (ungrouped.length) {
