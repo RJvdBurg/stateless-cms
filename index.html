@@ -2513,6 +2513,7 @@ function openSections() {
         el('span', { style:'flex:1;font-size:13px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' }, (i+1)+'. '+blockLabel(html)),
         el('button', { class:'mini', title:'Omhoog', onclick:()=>{ if(i>0){ blocks.splice(i-1,0,blocks.splice(i,1)[0]); apply(); } } }, '▲'),
         el('button', { class:'mini', title:'Omlaag', onclick:()=>{ if(i<blocks.length-1){ blocks.splice(i+1,0,blocks.splice(i,1)[0]); apply(); } } }, '▼'),
+        el('button', { class:'mini', title:'Dupliceren (kopie eronder)', onclick:()=>{ blocks.splice(i+1,0,blocks[i]); apply(); } }, '⧉'),
         el('button', { class:'mini', title:'Verwijderen', onclick:()=>{ if(confirm('Deze sectie verwijderen?')){ blocks.splice(i,1); apply(); } } }, '✕')
       );
       list.append(row);
