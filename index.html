@@ -444,6 +444,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
       <button class="btn btn-ghost" id="btnNewSite" title="Nieuwe website starten (nieuwe repo + theme)">➕ Nieuwe site</button>
       <button class="btn btn-ghost" id="btnNewPage" title="Nieuwe pagina maken (+ optioneel in het menu)">📄 Nieuwe pagina</button>
       <button class="btn btn-ghost" id="btnSections" title="Secties herschikken/verwijderen/toevoegen (bibliotheek + AI)">🧩 Secties</button>
+      <button class="btn btn-ghost" id="btnLinks" title="Tekst + URL van knoppen/links op deze pagina aanpassen">🔗 Links</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
       <button class="btn btn-ghost" id="btnThemeBuilder" title="Design & site.json visueel bewerken">🎨 Theme Builder</button>
       <button class="btn btn-ghost" id="btnBake" title="Alle pagina's opnieuw bakken — alleen nodig na een globale design/menu-wijziging">🧱 Alles herbakken</button>
@@ -2536,6 +2537,65 @@ function openSections() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   13f. LINKS/KNOPPEN — tekst + URL van elke link in <main> bewerken
+   ═══════════════════════════════════════════════════════════════════════════ */
+function setMainInner(inner) {
+  $('#editor').value = $('#editor').value.replace(/(<main[^>]*>)[\s\S]*?(<\/main>)/i, (mm, a, b) => a + '\n' + inner + '\n' + b);
+  state.dirty = true; updateFileMeta(); updatePreview(); updateButtons();
+}
+function openLinks() {
+  if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
+  if (!state.current || !/\.html?$/.test(state.current.path)) { toast('Open eerst een HTML-pagina.', 'error'); return; }
+  const m = $('#editor').value.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+  if (!m) { toast('Geen <main>-sectie op deze pagina.', 'error'); return; }
+  const doc = new DOMParser().parseFromString('<main>' + m[1] + '</main>', 'text/html');
+  const main = doc.querySelector('main');
+  const anchors = [...main.querySelectorAll('a[href]')];
+
+  const ov = el('div', { class:'links-ov', style:'position:fixed;inset:0;background:rgba(20,20,30,.5);display:flex;align-items:center;justify-content:center;z-index:9999;' });
+  const box = el('div', { style:'background:#fff;border-radius:14px;max-width:600px;width:94%;max-height:90vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3);font-size:14px;' });
+  const rows = [];
+  const listWrap = el('div', {});
+  if (!anchors.length) listWrap.append(el('div', { style:'color:#999;' }, 'Geen links/knoppen in de content van deze pagina.'));
+  anchors.forEach((a) => {
+    const isBtn = /\bbtn\b/.test(a.className);
+    const hasEls = [...a.children].length > 0;
+    const txtIn = el('input', { type:'text', value: hasEls ? '' : (a.textContent || '').trim(), placeholder: hasEls ? '(bevat opmaak — niet bewerkbaar)' : 'tekst',
+      style:'flex:1;padding:7px 9px;border:1px solid #ddd;border-radius:7px;font-size:13px;' });
+    if (hasEls) txtIn.disabled = true;
+    const hrefIn = el('input', { type:'text', value: a.getAttribute('href') || '', placeholder:'bijv. contact.html of https://…',
+      style:'flex:1;padding:7px 9px;border:1px solid #ddd;border-radius:7px;font-size:13px;' });
+    rows.push({ a, txtIn, hrefIn, hasEls });
+    listWrap.append(
+      el('div', { style:'border:1px solid #eee;border-radius:8px;padding:8px 10px;margin:6px 0;background:#fafafd;' },
+        el('div', { style:'font-size:11px;color:#999;margin-bottom:4px;' }, (isBtn ? '🔘 knop' : '🔗 link') + ' — huidige tekst: “' + ((a.textContent || '').trim().slice(0,50) || '—') + '”'),
+        el('div', { style:'font-size:11px;color:#888;margin:2px 0;' }, 'Tekst'), txtIn,
+        el('div', { style:'font-size:11px;color:#888;margin:4px 0 2px;' }, 'Link (URL)'), hrefIn
+      )
+    );
+  });
+
+  const btnApply = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;' }, 'Toepassen');
+  btnApply.onclick = () => {
+    rows.forEach(r => {
+      const h = r.hrefIn.value.trim(); if (h) r.a.setAttribute('href', h);
+      if (!r.hasEls) { const t = r.txtIn.value; if (t !== '' && t !== (r.a.textContent||'').trim()) r.a.textContent = t; }
+    });
+    setMainInner(main.innerHTML);
+    toast('Links bijgewerkt — publiceer om live te zetten.', 'success');
+    ov.remove();
+  };
+  box.append(
+    el('h2', { style:'margin:0 0 4px;color:#3E2E6D;font-size:18px;' }, '🔗 Links & knoppen'),
+    el('p', { style:'margin:0 0 12px;color:#777;font-size:13px;' }, 'Pas de tekst en de URL van elke knop/link op deze pagina aan. (Knoppen in de header/footer wijzig je in de Theme Builder.)'),
+    listWrap,
+    el('div', { style:'display:flex;gap:8px;justify-content:flex-end;margin-top:14px;' },
+      el('button', { class:'btn btn-ghost', onclick:()=>ov.remove() }, 'Annuleren'), btnApply)
+  );
+  ov.append(box); document.body.append(ov);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    14. EVENT WIRING
    ═══════════════════════════════════════════════════════════════════════════ */
 // Topbar
@@ -2544,6 +2604,7 @@ $('#btnImages').onclick = () => openImagesManager();
 $('#btnNewSite').onclick = () => openNewSite();
 $('#btnNewPage').onclick = () => openNewPage();
 $('#btnSections').onclick = () => openSections();
+$('#btnLinks').onclick = () => openLinks();
 $('#btnBake').onclick = () => bakeAllPages();
 $('#btnThemeBuilder').onclick = () => {
   const url = 'theme-builder.html' + (config.repo ? '?repo=' + encodeURIComponent(config.repo) : '');
