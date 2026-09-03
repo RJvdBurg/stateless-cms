@@ -533,8 +533,8 @@ async function init(){
 /* ── Events ───────────────────────────────────────────────────────────────── */
 $('#btnBack').onclick=()=>window.close();
 $('#patSave').onclick=()=>{const v=$('#patInput').value.trim();if(!v)return;cfg.pat=v;saveCfg(cfg);$('#patOverlay').classList.remove('on');init();};
-$('#btnSaveSite').onclick=async()=>{try{setStatus('site.json opslaan…','info');await saveSite();setStatus('site.json opgeslagen ✓','ok');}catch(e){setStatus(e.message,'err');}};
-$('#btnSaveTheme').onclick=async()=>{try{setStatus('theme opslaan…','info');const r=await saveTheme();setStatus(r?'theme opgeslagen ✓':'geen theme-wijzigingen','ok');}catch(e){setStatus('theme opslaan mislukt: '+e.message,'err');}};
+$('#btnSaveSite').onclick=async()=>{try{setStatus('site.json opslaan…','info');await saveSite();setStatus('site.json opgeslagen ✓ — nog niet live: klik 🧱 Bak & publiceer','ok');}catch(e){setStatus(e.message,'err');}};
+$('#btnSaveTheme').onclick=async()=>{try{setStatus('theme opslaan…','info');const r=await saveTheme();setStatus((r?'theme opgeslagen ✓':'geen theme-wijzigingen')+' — nog niet live: klik 🧱 Bak & publiceer','ok');}catch(e){setStatus('theme opslaan mislukt: '+e.message,'err');}};
 $('#btnBake').onclick=async()=>{
   if(!confirm('Opslaan (site.json + theme) en alle pagina\'s opnieuw bakken tot platte HTML?'))return;
   try{
