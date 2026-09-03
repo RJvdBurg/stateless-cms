@@ -256,8 +256,9 @@ async function uploadLogo(file, which){
     const sha=await fileSha(REPO, path);
     await putB64(REPO, path, r.b64, 'Upload '+path+' (Theme Builder)', sha);
     if(which==='white') site.logoWhite=path; else site.logo=path;
+    await saveSite();   // pad meteen persistent in site.json (voorkomt "vergeten op te slaan")
     buildForm(); renderPreview();
-    setStatus('Logo geüpload ✓ — klik “Bak & publiceer” om live te zetten.','ok');
+    setStatus('Logo geüpload + opgeslagen ✓ — klik 🧱 Bak & publiceer om het op de pagina\'s te zetten.','ok');
   }catch(e){ setStatus('Upload mislukt: '+e.message,'err'); }
 }
 
