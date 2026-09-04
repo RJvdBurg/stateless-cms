@@ -1121,7 +1121,7 @@ async function openFile(path) {
     $('#curPath').textContent = path;
     updateFileMeta();
     updateFrontmatterNote();
-    setView(state.view); // behoud de huidige weergave (Editor/Split/Preview) bij het openen
+    setView('preview'); // open een bestand standaard in preview-weergave
     updatePreview();
     updateActiveRow(path);
     updateButtons();
