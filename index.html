@@ -463,7 +463,11 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
           <button class="topmenu-item" id="btnBake">🧱 Alles herbakken</button>
         </div>
       </div>
-      <button class="btn btn-ghost" id="btnNewSite" title="Nieuwe website starten (nieuwe repo + theme)">➕ Nieuwe site</button>
+      <div class="topmenu">
+        <button class="btn btn-ghost topmenu-btn" id="siteSwitchBtn">🌐 Site ▾</button>
+        <div class="topmenu-list" id="siteSwitchList"></div>
+      </div>
+      <button class="btn btn-ghost" id="btnLiveSite" title="Bekijk de live site op GitHub Pages">🔗 Live</button>
       <button class="btn btn-ghost" id="btnSettings">⚙ Instellingen</button>
       <button class="btn btn-cta" id="btnPublish" disabled>↑ Opslaan &amp; Publiceer</button>
     </div>
@@ -2450,6 +2454,7 @@ function openNewSite(){
     btnGo.disabled = true; btnCancel.disabled = true; btnGo.textContent = 'Bezig…';
     try {
       const r = await runNewSite(opts, log);
+      rememberSite(r.siteRepo, opts.siteName || r.siteRepoName);
       log('Klaar! Nieuwe site: '+r.siteRepo);
       toast('Nieuwe site aangemaakt. Openen…', 'success', 4000);
       setTimeout(()=>{ location.href = location.pathname + '?repo=' + encodeURIComponent(r.siteRepo); }, 1200);
@@ -2938,7 +2943,7 @@ document.querySelectorAll('.topmenu-btn').forEach(b => {
 });
 document.addEventListener('click', () => document.querySelectorAll('.topmenu.open').forEach(x => x.classList.remove('open')));
 $('#btnImages').onclick = () => openImagesManager();
-$('#btnNewSite').onclick = () => openNewSite();
+$('#btnLiveSite').onclick = () => { const u = livePagesUrl(); if (u) window.open(u, '_blank'); else toast('Geen repo ingesteld.', 'error'); };
 $('#btnNewPage').onclick = () => openNewPage();
 $('#btnMenuPages').onclick = () => openMenuPages();
 $('#btnSections').onclick = () => openSections();
@@ -3091,15 +3096,52 @@ window.addEventListener('beforeunload', e => { if (state.dirty) { e.preventDefau
 /* ═══════════════════════════════════════════════════════════════════════════
    15. INIT
    ═══════════════════════════════════════════════════════════════════════════ */
+/* ── Site-wisselaar: onthoud sites (lokaal) om tussen te schakelen ────────── */
+const SITES_KEY = 'scms_sites_v1';
+function getSites() { try { return JSON.parse(localStorage.getItem(SITES_KEY) || '[]'); } catch { return []; } }
+function saveSites(a) { localStorage.setItem(SITES_KEY, JSON.stringify(a)); }
+function rememberSite(repo, name) {
+  if (!repo) return;
+  const a = getSites().filter(s => s.repo.toLowerCase() !== repo.toLowerCase());
+  a.unshift({ repo, name: name || repo });
+  saveSites(a.slice(0, 40));
+}
+function livePagesUrl() {
+  const [o, r] = (config.repo || '/').split('/');
+  return (o && r) ? `https://${o.toLowerCase()}.github.io/${r}/` : null;
+}
+function goToSite(repo) {
+  if (!repo || (config.repo && repo.toLowerCase() === config.repo.toLowerCase())) return;
+  if (state.dirty && !confirm('Er zijn niet-opgeslagen wijzigingen. Toch naar een andere site?')) return;
+  location.href = location.pathname + '?repo=' + encodeURIComponent(repo);
+}
+function renderSiteSwitcher() {
+  const list = $('#siteSwitchList'); if (!list) return;
+  list.innerHTML = '';
+  const sites = getSites();
+  if (!sites.length) list.append(el('div', { style:'padding:8px 10px;font-size:12px;color:#999;' }, 'Nog geen sites onthouden.'));
+  sites.forEach(s => {
+    const cur = config.repo && s.repo.toLowerCase() === config.repo.toLowerCase();
+    const b = el('button', { class:'topmenu-item', title:s.repo, onclick:()=>goToSite(s.repo) }, (cur ? '✓ ' : '') + (s.name || s.repo));
+    if (cur) b.style.fontWeight = '700';
+    list.append(b);
+  });
+  list.append(el('div', { style:'border-top:1px solid #eee;margin:5px 0;' }));
+  list.append(el('button', { class:'topmenu-item', onclick:()=>openNewSite() }, '➕ Nieuwe site…'));
+  const btn = $('#siteSwitchBtn'); if (btn) btn.textContent = '🌐 ' + (config.siteName || config.repo || 'Site') + ' ▾';
+}
+
 async function init() {
   refreshTopbar();
   if (isConfigured()) {
     await loadSiteConfig();   // site-instellingen uit cms.config.json van de doel-repo
     refreshTopbar();
+    rememberSite(config.repo, config.siteName);
     loadTree();
   } else {
     setTimeout(() => openSettings('github'), 400);
   }
+  renderSiteSwitcher();
 }
 init();
 </script>
