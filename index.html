@@ -3106,6 +3106,23 @@ function rememberSite(repo, name) {
   a.unshift({ repo, name: name || repo });
   saveSites(a.slice(0, 40));
 }
+function addSiteIfNew(repo, name) {
+  const a = getSites();
+  if (a.some(s => s.repo.toLowerCase() === repo.toLowerCase())) return false;
+  a.push({ repo, name: name || repo }); saveSites(a); return true;
+}
+/* Scan alle repo's van de gebruiker op een cms.config.json (= een site) via code-search. */
+async function scanSites() {
+  try {
+    const me = await GitHub.req('/user');
+    const q = encodeURIComponent('themeBase filename:cms.config.json user:' + me.login);
+    const data = await GitHub.req('/search/code?q=' + q + '&per_page=100');
+    const repos = [...new Set((data.items || []).map(it => it.repository && it.repository.full_name).filter(Boolean))];
+    let added = 0;
+    repos.forEach(r => { if (addSiteIfNew(r, r.split('/')[1])) added++; });
+    return added;
+  } catch (e) { return -1; }
+}
 function livePagesUrl() {
   const [o, r] = (config.repo || '/').split('/');
   return (o && r) ? `https://${o.toLowerCase()}.github.io/${r}/` : null;
@@ -3127,6 +3144,13 @@ function renderSiteSwitcher() {
     list.append(b);
   });
   list.append(el('div', { style:'border-top:1px solid #eee;margin:5px 0;' }));
+  const scanBtn = el('button', { class:'topmenu-item', onclick: async (e) => {
+    e.stopPropagation(); scanBtn.textContent = '🔄 Zoeken…';
+    const n = await scanSites();
+    renderSiteSwitcher();
+    toast(n < 0 ? 'Zoeken mislukt (token-scope?).' : (n === 0 ? 'Geen nieuwe sites gevonden.' : n + ' site(s) toegevoegd.'), n < 0 ? 'error' : 'success');
+  } }, '🔄 Sites zoeken');
+  list.append(scanBtn);
   list.append(el('button', { class:'topmenu-item', onclick:()=>openNewSite() }, '➕ Nieuwe site…'));
   const btn = $('#siteSwitchBtn'); if (btn) btn.textContent = '🌐 ' + (config.siteName || config.repo || 'Site') + ' ▾';
 }
@@ -3138,6 +3162,8 @@ async function init() {
     refreshTopbar();
     rememberSite(config.repo, config.siteName);
     loadTree();
+    scanSites().then(n => { if (n > 0) renderSiteSwitcher(); }); // automatisch je sites ontdekken
+
   } else {
     setTimeout(() => openSettings('github'), 400);
   }
