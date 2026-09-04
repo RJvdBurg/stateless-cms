@@ -143,6 +143,11 @@ input, textarea, select { font-family:inherit; font-size:14px; color:var(--n-800
 .repo-pill code { font-family:var(--font-mono); font-size:11.5px; color:var(--purple-500); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .topbar-spacer { flex:1; }
 .topbar-actions { display:flex; align-items:center; gap:8px; }
+.topmenu { position:relative; }
+.topmenu-list { position:absolute; top:calc(100% + 5px); right:0; background:#fff; border:1px solid #e6e6ef; border-radius:10px; box-shadow:0 12px 34px rgba(20,20,40,.16); padding:6px; min-width:210px; display:none; z-index:600; }
+.topmenu.open .topmenu-list { display:block; }
+.topmenu-item { display:block; width:100%; text-align:left; background:none; border:none; padding:9px 11px; border-radius:7px; font-size:13px; cursor:pointer; color:#333; }
+.topmenu-item:hover { background:#f3f3f8; }
 .mini { border:none; background:#ececf3; border-radius:6px; width:28px; height:28px; cursor:pointer; font-size:13px; color:#555; flex:0 0 auto; }
 .mini:hover { background:#e0e0ea; }
 
@@ -441,14 +446,24 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
 
     <div class="topbar-actions">
       <button class="btn-icon" id="btnRefresh" title="Bestandsboom vernieuwen">⟳</button>
+      <div class="topmenu">
+        <button class="btn btn-ghost topmenu-btn">✏️ Bewerken ▾</button>
+        <div class="topmenu-list">
+          <button class="topmenu-item" id="btnNewPage">📄 Nieuwe pagina</button>
+          <button class="topmenu-item" id="btnMenuPages">🗂 Menu &amp; pagina's</button>
+          <button class="topmenu-item" id="btnSections">🧩 Secties</button>
+          <button class="topmenu-item" id="btnLinks">🔗 Links &amp; foto's</button>
+          <button class="topmenu-item" id="btnImages">🖼 Afbeeldingen</button>
+        </div>
+      </div>
+      <div class="topmenu">
+        <button class="btn btn-ghost topmenu-btn">🎨 Design ▾</button>
+        <div class="topmenu-list">
+          <button class="topmenu-item" id="btnThemeBuilder">🎨 Theme Builder</button>
+          <button class="topmenu-item" id="btnBake">🧱 Alles herbakken</button>
+        </div>
+      </div>
       <button class="btn btn-ghost" id="btnNewSite" title="Nieuwe website starten (nieuwe repo + theme)">➕ Nieuwe site</button>
-      <button class="btn btn-ghost" id="btnNewPage" title="Nieuwe pagina maken (+ optioneel in het menu)">📄 Nieuwe pagina</button>
-      <button class="btn btn-ghost" id="btnMenuPages" title="Menu-items en pagina's hernoemen/verwijderen">🗂 Menu &amp; pagina's</button>
-      <button class="btn btn-ghost" id="btnSections" title="Secties herschikken/verwijderen/toevoegen (bibliotheek + AI)">🧩 Secties</button>
-      <button class="btn btn-ghost" id="btnLinks" title="Links/knoppen (tekst + URL) en afbeeldingen in de content aanpassen/uploaden">🔗 Links &amp; foto's</button>
-      <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
-      <button class="btn btn-ghost" id="btnThemeBuilder" title="Design & site.json visueel bewerken">🎨 Theme Builder</button>
-      <button class="btn btn-ghost" id="btnBake" title="Alle pagina's opnieuw bakken — alleen nodig na een globale design/menu-wijziging">🧱 Alles herbakken</button>
       <button class="btn btn-ghost" id="btnSettings">⚙ Instellingen</button>
       <button class="btn btn-cta" id="btnPublish" disabled>↑ Opslaan &amp; Publiceer</button>
     </div>
@@ -2889,6 +2904,16 @@ function openMenuPages() {
    ═══════════════════════════════════════════════════════════════════════════ */
 // Topbar
 $('#btnSettings').onclick = () => openSettings();
+// Dropdown-menu's in de topbar
+document.querySelectorAll('.topmenu-btn').forEach(b => {
+  b.addEventListener('click', e => {
+    e.stopPropagation();
+    const m = b.closest('.topmenu'), wasOpen = m.classList.contains('open');
+    document.querySelectorAll('.topmenu.open').forEach(x => x.classList.remove('open'));
+    if (!wasOpen) m.classList.add('open');
+  });
+});
+document.addEventListener('click', () => document.querySelectorAll('.topmenu.open').forEach(x => x.classList.remove('open')));
 $('#btnImages').onclick = () => openImagesManager();
 $('#btnNewSite').onclick = () => openNewSite();
 $('#btnNewPage').onclick = () => openNewPage();
