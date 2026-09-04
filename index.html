@@ -3111,15 +3111,20 @@ function addSiteIfNew(repo, name) {
   if (a.some(s => s.repo.toLowerCase() === repo.toLowerCase())) return false;
   a.push({ repo, name: name || repo }); saveSites(a); return true;
 }
-/* Scan alle repo's van de gebruiker op een cms.config.json (= een site) via code-search. */
+/* Scan de repo's van de gebruiker op een cms.config.json (= een site) — betrouwbaar,
+   via de contents-API (geen zoek-index nodig). */
 async function scanSites() {
   try {
-    const me = await GitHub.req('/user');
-    const q = encodeURIComponent('themeBase filename:cms.config.json user:' + me.login);
-    const data = await GitHub.req('/search/code?q=' + q + '&per_page=100');
-    const repos = [...new Set((data.items || []).map(it => it.repository && it.repository.full_name).filter(Boolean))];
+    const repos = await GitHub.req('/user/repos?per_page=100&affiliation=owner&sort=updated');
     let added = 0;
-    repos.forEach(r => { if (addSiteIfNew(r, r.split('/')[1])) added++; });
+    await Promise.all((repos || []).map(async r => {
+      try {
+        const f = await GitHub.req(`/repos/${r.full_name}/contents/cms.config.json`);
+        let name = r.name;
+        try { name = JSON.parse(decodeBase64(f.content)).siteName || r.name; } catch (e) {}
+        if (addSiteIfNew(r.full_name, name)) added++;
+      } catch (e) { /* geen cms.config.json → geen site */ }
+    }));
     return added;
   } catch (e) { return -1; }
 }
