@@ -2766,6 +2766,7 @@ async function ghDelete(path, sha, message) {
 function stripHrefFromSite(site, href) {
   if (site.nav) site.nav = site.nav.filter(it => { if (it.sub) it.sub = it.sub.filter(s => s.href !== href); return it.href !== href; });
   if (site.footer && site.footer.columns) site.footer.columns.forEach(c => { if (c.links) c.links = c.links.filter(l => l.href !== href); });
+  if (site.cta && site.cta.href === href) site.cta.href = 'contact.html';
 }
 function renameHrefInSite(site, from, to) {
   const fix = o => { if (o && o.href === from) o.href = to; };
