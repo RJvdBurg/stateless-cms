@@ -132,6 +132,7 @@ let aiPrompt='';            // laatste AI-palet-beschrijving (blijft bij form-re
 let aiReasoning='';         // korte toelichting van Gemini bij het laatste palet
 let previewLogo='';         // dataURL-override voor instant logo-preview (header)
 let previewLogoWhite='';    // idem (footer)
+let extraTokens={};         // ALLE overige :root-variabelen {"--naam":"waarde"} (auto)
 
 const $=s=>document.querySelector(s);
 function setStatus(msg,type='info'){const e=$('#status');e.className='status '+type;e.textContent=msg;if(type==='ok')setTimeout(()=>{if(e.textContent===msg)e.textContent='';},4000);}
@@ -154,6 +155,33 @@ function applyTokens(css,t){
   if(t.fbody)css=css.replace(/--fbody:\s*[^;]+;/,'--fbody:'+t.fbody+';');
   if(t.maxw)css=css.replace(/--maxw:\s*[^;]+;/,'--maxw:'+t.maxw+';');
   return css;
+}
+/* ── Alle :root-variabelen (generiek) ─────────────────────────────────────── */
+const DEDICATED = new Set(['--purple','--pink','--teal','--grad','--grad-soft','--fdisplay','--fbody','--maxw']);
+function parseAllTokens(css){
+  const m=css.match(/:root\s*\{([\s\S]*?)\}/); const out={};
+  if(!m) return out;
+  m[1].split(';').forEach(decl=>{
+    const i=decl.indexOf(':'); if(i<0) return;
+    const name=decl.slice(0,i).trim(), val=decl.slice(i+1).trim();
+    if(name.startsWith('--') && val) out[name]=val;
+  });
+  return out;
+}
+function applyExtraTokens(css, extra){
+  for(const name in extra){
+    const re=new RegExp('('+name.replace(/[-]/g,'\\-')+'\\s*:\\s*)[^;]+;');
+    if(re.test(css)) css=css.replace(re,(mm,p1)=>p1+extra[name]+';');
+  }
+  return css;
+}
+function classifyToken(name,val){
+  if(/^(linear|radial)-gradient/i.test(val)) return 'Gradients';
+  if(/shadow/i.test(name)) return 'Schaduwen';
+  if(/^#([0-9a-fA-F]{3,8})$/.test(val)||/^rgb|^hsl/i.test(val)) return 'Kleuren';
+  if(/font/i.test(name)||/serif|sans-serif|monospace|['"]/.test(val)) return 'Lettertypen';
+  if(/\d(px|rem|em|%|vw|vh)|clamp\(|calc\(/.test(val)||/width|maxw|gap|radius|size|space|py|px|height|inset|margin|pad/i.test(name)) return 'Maten & ruimte';
+  return 'Overig';
 }
 
 /* ── Lettertypen (curated Google Fonts die betrouwbaar laden) ─────────────── */
@@ -268,7 +296,7 @@ function renderPreview(){
   const cfgm=Object.assign({},T.DEFAULTS,site);
   if(previewLogo) cfgm.logo=previewLogo;
   if(previewLogoWhite) cfgm.logoWhite=previewLogoWhite;
-  const css=applyTokens(themeCss,tokens);
+  const css=applyExtraTokens(applyTokens(themeCss,tokens),extraTokens);
   const header=T.headerOuterHTML(cfgm,'index.html').replace(/ onerror="[^"]*"/g,'');
   const footer=T.footerOuterHTML(cfgm);
   const wa=T.waOuterHTML(cfgm);
@@ -392,6 +420,39 @@ function buildForm(){
   fsCol.append(el('div',{class:'hint'},'Kleuren/fonts worden opgeslagen in theme.css (theme-repo). Nieuwe fonts moeten in theme.css ge-@import worden.'));
   f.append(fsCol);
 
+  // Alle overige design-variabelen (automatisch, gegroepeerd)
+  const fsVars=el('fieldset',{},el('legend',{},'Alle design-variabelen'));
+  const names=Object.keys(extraTokens);
+  if(!names.length){ fsVars.append(el('div',{class:'hint'},'Geen extra variabelen gevonden.')); }
+  else {
+    const order=['Kleuren','Gradients','Lettertypen','Maten & ruimte','Schaduwen','Overig'];
+    const grouped={}; names.forEach(n=>{ const g=classifyToken(n,extraTokens[n]); (grouped[g]=grouped[g]||[]).push(n); });
+    fsVars.append(el('div',{class:'hint',style:'margin-bottom:6px'},'Elke variabele uit theme.css. Kleuren krijgen een kiezer; de rest een tekstveld (bijv. --carousel-caption-gap).'));
+    order.forEach(g=>{
+      const list=grouped[g]; if(!list||!list.length) return;
+      fsVars.append(el('div',{class:'grp'},g));
+      list.sort().forEach(name=>{
+        const val=extraTokens[name];
+        const isHex=/^#([0-9a-fA-F]{6})$/.test(val);
+        const row=el('div',{style:'display:flex;align-items:center;gap:8px;margin:4px 0;'});
+        row.append(el('code',{style:'flex:0 0 42%;font-size:11px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'},name));
+        if(isHex){
+          const cp=el('input',{type:'color'}); cp.value=val; cp.style.cssText='width:34px;height:28px;border:1px solid var(--bd);border-radius:6px;padding:0;flex:0 0 auto;';
+          const tx=el('input',{type:'text'}); tx.value=val; tx.style.cssText='flex:1;padding:6px 8px;border:1px solid var(--bd);border-radius:6px;font-size:12px;';
+          cp.addEventListener('input',()=>{extraTokens[name]=cp.value;tx.value=cp.value;schedulePreview();});
+          tx.addEventListener('input',()=>{extraTokens[name]=tx.value;if(/^#([0-9a-fA-F]{6})$/.test(tx.value))cp.value=tx.value;schedulePreview();});
+          row.append(cp,tx);
+        } else {
+          const tx=el('input',{type:'text'}); tx.value=val; tx.style.cssText='flex:1;padding:6px 8px;border:1px solid var(--bd);border-radius:6px;font-size:12px;';
+          tx.addEventListener('input',()=>{extraTokens[name]=tx.value;schedulePreview();});
+          row.append(tx);
+        }
+        fsVars.append(row);
+      });
+    });
+  }
+  f.append(fsVars);
+
   // CTA (knop rechtsboven in de header)
   const fsCta=el('fieldset',{},el('legend',{},'Actieknop (rechtsboven)'));
   const ctaOn=!!(site.cta && site.cta.label);
@@ -495,7 +556,7 @@ async function saveSite(){
   siteSha=r.content.sha; return r;
 }
 async function saveTheme(){
-  const newCss=applyTokens(themeCss,tokens);
+  const newCss=applyExtraTokens(applyTokens(themeCss,tokens),extraTokens);
   if(newCss===themeCss) return null;
   const r=await putFile(themeRepo,'theme.css',newCss,'Theme Builder: update design tokens',themeSha);
   themeCss=newCss; themeSha=r.content.sha; return r;
@@ -535,6 +596,7 @@ async function init(){
     try{ const tf=await getFile(themeRepo,'theme.css'); themeCss=tf.text; themeSha=tf.sha; }
     catch(e){ themeCss=await fetch(themeBase+'theme.css').then(r=>r.text()); themeSha=null; setStatus('Let op: kan theme.css niet schrijven in '+themeRepo+' (token-scope?). site.json opslaan werkt wél.','err'); }
     tokens=parseTokens(themeCss);
+    { const all=parseAllTokens(themeCss); extraTokens={}; for(const n in all){ if(!DEDICATED.has(n)) extraTokens[n]=all[n]; } }
     // site.json
     try{ const sf=await getFile(REPO,'site.json'); site=JSON.parse(sf.text); siteSha=sf.sha; }
     catch(e){ site=JSON.parse(JSON.stringify(T.DEFAULTS)); siteSha=null; }
