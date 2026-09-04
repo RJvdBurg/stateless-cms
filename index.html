@@ -2892,6 +2892,24 @@ function openMenuPages() {
           el('span', { style:'font-size:11px;color:#999;' }, '.html'), btnRen, btnDel));
       });
 
+      // + Nieuwe pagina (in dit venster)
+      const npTitle = inp('', 'Titel van nieuwe pagina'); npTitle.style.flex = '1';
+      const npMenu = el('input', { type:'checkbox', style:'margin:0 3px;' });
+      const npBtn = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px;', onclick: async () => {
+        const t = npTitle.value.trim(); if (!t) { toast('Vul een titel in.', 'error'); return; }
+        const slug = slugPage(t); if (!slug) { toast('Ongeldige titel.', 'error'); return; }
+        if (state.tree.some(x => x.path === slug + '.html')) { toast('"' + slug + '.html" bestaat al.', 'error'); return; }
+        npBtn.disabled = true; npBtn.textContent = 'Bezig…';
+        try { const p = await createPage({ title: t, slug, inMenu: npMenu.checked, parent: '', label: t }); toast('Pagina aangemaakt: ' + p, 'success', 4000); ov.remove(); openMenuPages(); }
+        catch (e) { toast('Mislukt: ' + e.message, 'error', 8000); npBtn.disabled = false; npBtn.textContent = '+ Toevoegen'; }
+      } }, '+ Toevoegen');
+      box.append(
+        el('div', { style:'margin-top:10px;padding-top:10px;border-top:1px dashed #e2e2ec;font-size:12px;color:#3E2E6D;font-weight:600;' }, '+ Nieuwe pagina'),
+        el('div', { style:'display:flex;gap:6px;align-items:center;margin-top:4px;' },
+          npTitle,
+          el('label', { style:'font-size:12px;color:#555;display:flex;align-items:center;gap:3px;white-space:nowrap;' }, npMenu, 'in menu'),
+          npBtn));
+
       box.append(el('div', { style:'display:flex;justify-content:flex-end;margin-top:16px;' },
         el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;', onclick:()=>ov.remove() }, 'Sluiten')));
     };
