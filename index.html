@@ -1364,7 +1364,9 @@ function selectSnippet(text) {
     toast('Kon dit fragment niet automatisch koppelen (bijv. een animatie of samengesteld element). Bewerk het in de editor.', 'info', 6000);
     return;
   }
-  if (state.view === 'preview') setView('split');
+  // Blijf in de huidige weergave: in Preview-modus wil je klik-bewerken zonder
+  // dat de code-editor terugkomt. Je bewerkt het fragment via de selectie-chip
+  // (+ AI) in de copilot-zijbalk; de editor blijft verborgen.
   const raw = ta.value.slice(range[0], range[1]);
   ta.focus();
   ta.setSelectionRange(range[0], range[1]);
@@ -2780,7 +2782,10 @@ $$('.view-tab').forEach(t => t.onclick = () => setView(t.dataset.view));
 $('#btnEditMode').onclick = () => {
   state.editMode = !state.editMode;
   $('#btnEditMode').classList.toggle('active', state.editMode);
-  if (state.editMode && state.view === 'edit') setView('split');
+  // Klik-bewerken werkt volledig in de preview (klik een tekst → bewerk via de
+  // selectie-chip/AI in de zijbalk). De code-editor is daarvoor niet nodig, dus
+  // schakelen we naar preview-only i.p.v. de editor ernaast te tonen.
+  if (state.editMode) setView('preview');
   if (!state.editMode) clearSelection();
   updatePreview();
   toast(state.editMode
