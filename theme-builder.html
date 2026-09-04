@@ -472,36 +472,10 @@ function buildForm(){
   fsCta.append(el('div',{class:'hint'},'De knop staat vast rechtsboven in de header. Wil je de actie ergens anders? Zet deze uit en voeg een menu-item toe (Menu) of een CTA-sectie op de pagina (🧩 Secties in de CMS).'));
   f.append(fsCta);
 
-  // Menu
+  // Menu → beheer je in de CMS (niet in het theme). Design blijft hier.
   const fsNav=el('fieldset',{},el('legend',{},'Menu'));
-  const navWrap=el('div',{});
-  function drawNav(){
-    navWrap.innerHTML='';
-    site.nav.forEach((it,idx)=>{
-      const row=el('div',{class:'row'});
-      row.append(input(it.label,v=>{it.label=v;},'Label'));
-      const hr=input(it.href,v=>{it.href=v;},'pagina.html');hr.style.flex='0 0 130px';row.append(hr);
-      const subBtn=el('button',{class:'mini',title:'Submenu aan/uit',onclick:()=>{if(it.sub)delete it.sub;else it.sub=[];drawNav();schedulePreview();}},it.sub?'▼':'＋');
-      row.append(subBtn);
-      row.append(miniBtn('▲',()=>{if(idx>0){site.nav.splice(idx-1,0,site.nav.splice(idx,1)[0]);drawNav();schedulePreview();}}));
-      row.append(miniBtn('✕',()=>{site.nav.splice(idx,1);drawNav();schedulePreview();}));
-      navWrap.append(row);
-      if(it.sub){
-        const sub=el('div',{class:'sub'});
-        it.sub.forEach((s,j)=>{
-          const sr=el('div',{class:'row'});
-          sr.append(input(s.label,v=>{s.label=v;},'Sub-label'));
-          const shr=input(s.href,v=>{s.href=v;},'pagina.html');shr.style.flex='0 0 130px';sr.append(shr);
-          sr.append(miniBtn('✕',()=>{it.sub.splice(j,1);drawNav();schedulePreview();}));
-          sub.append(sr);
-        });
-        sub.append(el('button',{class:'addbtn',onclick:()=>{it.sub.push({label:'',href:''});drawNav();schedulePreview();}},'+ submenu-item'));
-        navWrap.append(sub);
-      }
-    });
-    navWrap.append(el('button',{class:'addbtn',onclick:()=>{site.nav.push({label:'',href:''});drawNav();schedulePreview();}},'+ menu-item'));
-  }
-  drawNav();fsNav.append(navWrap);f.append(fsNav);
+  fsNav.append(el('div',{class:'hint'},'Het menu (items, volgorde, hernoemen/verwijderen) beheer je nu in de CMS → knop “🗂 Menu & pagina\'s”. Hier regel je alleen het design.'));
+  f.append(fsNav);
 
   // Footer
   const fsFoot=el('fieldset',{},el('legend',{},'Footer'));
