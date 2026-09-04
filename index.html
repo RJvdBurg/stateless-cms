@@ -2141,13 +2141,14 @@ async function loadSiteJsonForBake() {
   try { return JSON.parse(decodeBase64((await GitHub.getFile('site.json')).content)); }
   catch (e) { return {}; }
 }
-/* Kern van het bakken (geen confirm). Optioneel linkFix={from,to} werkt href-verwijzingen bij. */
-async function bakePagesCore(commitMsg, linkFix) {
+/* Kern van het bakken (geen confirm). linkFix={from,to} werkt href's bij; exclude (Set) slaat paden over. */
+async function bakePagesCore(commitMsg, linkFix, exclude) {
   const T = await loadThemeLib();
   const cssText = await fetchThemeCss();
   const cfg = Object.assign({}, T.DEFAULTS, await loadSiteJsonForBake());
   await loadTree();
-  const pages = state.tree.filter(t => t.type === 'blob' && /\.html$/i.test(t.path)).map(t => t.path);
+  const pages = state.tree.filter(t => t.type === 'blob' && /\.html$/i.test(t.path)).map(t => t.path)
+    .filter(p => !(exclude && exclude.has(p)));
   let n = 0, skipped = 0;
   for (const path of pages) {
     const f = await GitHub.getFile(path);
@@ -2792,10 +2793,12 @@ function renameHrefInSite(site, from, to) {
 async function deletePageFlow(path, site) {
   stripHrefFromSite(site, path);
   await commitSiteJson(site, 'Menu: verwijder verwijzingen naar ' + path);
+  // Eerst de overige pagina's herbakken (deze uitsluiten), dán pas verwijderen —
+  // anders her-creëert de herbak de pagina door eventual consistency.
+  await bakePagesCore('Herbak na verwijderen ' + path, null, new Set([path]));
   const f = await GitHub.getFile(path);
   await ghDelete(path, f.sha, 'Verwijder pagina ' + path);
-  await loadTree();
-  await bakePagesCore('Herbak na verwijderen ' + path);
+  state.tree = state.tree.filter(t => t.path !== path); // meteen uit de UI
 }
 async function renamePageFlow(oldPath, newSlug, site) {
   const newPath = newSlug + '.html';
@@ -2805,9 +2808,11 @@ async function renamePageFlow(oldPath, newSlug, site) {
   await commitSiteJson(site, 'Menu: hernoem ' + oldPath + ' → ' + newPath);
   const f = await GitHub.getFile(oldPath);
   await GitHub.putFile(newPath, f.content.replace(/\s/g, ''), 'Hernoem: ' + oldPath + ' → ' + newPath);
-  await ghDelete(oldPath, f.sha, 'Verwijder oud pad ' + oldPath);
   await loadTree();
-  await bakePagesCore('Herbak na hernoemen', { from: oldPath, to: newPath });
+  // herbak alles (incl. nieuwe pagina), werk href's bij, sluit het OUDE pad uit; verwijder oud als laatste
+  await bakePagesCore('Herbak na hernoemen', { from: oldPath, to: newPath }, new Set([oldPath]));
+  await ghDelete(oldPath, f.sha, 'Verwijder oud pad ' + oldPath);
+  state.tree = state.tree.filter(t => t.path !== oldPath); // meteen uit de UI
   return newPath;
 }
 
