@@ -443,6 +443,7 @@ kbd { font-family:var(--font-mono); font-size:11px; background:var(--n-100); bor
       <button class="btn-icon" id="btnRefresh" title="Bestandsboom vernieuwen">⟳</button>
       <button class="btn btn-ghost" id="btnNewSite" title="Nieuwe website starten (nieuwe repo + theme)">➕ Nieuwe site</button>
       <button class="btn btn-ghost" id="btnNewPage" title="Nieuwe pagina maken (+ optioneel in het menu)">📄 Nieuwe pagina</button>
+      <button class="btn btn-ghost" id="btnMenuPages" title="Menu-items en pagina's hernoemen/verwijderen">🗂 Menu &amp; pagina's</button>
       <button class="btn btn-ghost" id="btnSections" title="Secties herschikken/verwijderen/toevoegen (bibliotheek + AI)">🧩 Secties</button>
       <button class="btn btn-ghost" id="btnLinks" title="Links/knoppen (tekst + URL) en afbeeldingen in de content aanpassen/uploaden">🔗 Links &amp; foto's</button>
       <button class="btn btn-ghost" id="btnImages">🖼 Afbeeldingen</button>
@@ -1364,9 +1365,7 @@ function selectSnippet(text) {
     toast('Kon dit fragment niet automatisch koppelen (bijv. een animatie of samengesteld element). Bewerk het in de editor.', 'info', 6000);
     return;
   }
-  // Blijf in de huidige weergave: in Preview-modus wil je klik-bewerken zonder
-  // dat de code-editor terugkomt. Je bewerkt het fragment via de selectie-chip
-  // (+ AI) in de copilot-zijbalk; de editor blijft verborgen.
+  if (state.view === 'preview') setView('split');
   const raw = ta.value.slice(range[0], range[1]);
   ta.focus();
   ta.setSelectionRange(range[0], range[1]);
@@ -2127,8 +2126,8 @@ async function loadSiteJsonForBake() {
   try { return JSON.parse(decodeBase64((await GitHub.getFile('site.json')).content)); }
   catch (e) { return {}; }
 }
-/* Kern van het bakken (geen confirm) — herbruikt door de bakknop én de pagina-flow. */
-async function bakePagesCore(commitMsg) {
+/* Kern van het bakken (geen confirm). Optioneel linkFix={from,to} werkt href-verwijzingen bij. */
+async function bakePagesCore(commitMsg, linkFix) {
   const T = await loadThemeLib();
   const cssText = await fetchThemeCss();
   const cfg = Object.assign({}, T.DEFAULTS, await loadSiteJsonForBake());
@@ -2137,7 +2136,8 @@ async function bakePagesCore(commitMsg) {
   let n = 0, skipped = 0;
   for (const path of pages) {
     const f = await GitHub.getFile(path);
-    const src = decodeBase64(f.content);
+    let src = decodeBase64(f.content);
+    if (linkFix && linkFix.from) src = src.split('href="' + linkFix.from + '"').join('href="' + linkFix.to + '"').split("href='" + linkFix.from + "'").join("href='" + linkFix.to + "'");
     if (!/<main/i.test(src)) { skipped++; continue; }
     const out = T.bakePage(src, path.split('/').pop(), cssText, cfg);
     if (/vanderburg-theme|theme\.css|theme\.js/.test(out) || !/CMS:HEADER:START/.test(out)) {
@@ -2752,6 +2752,138 @@ function openLinks() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   13g. MENU & PAGINA'S BEHEREN — menu-items en pagina's hernoemen/verwijderen
+   ═══════════════════════════════════════════════════════════════════════════ */
+async function commitSiteJson(siteObj, msg) {
+  let sha; try { sha = (await GitHub.getFile('site.json')).sha; } catch (e) {}
+  await GitHub.putFile('site.json', encodeBase64(JSON.stringify(siteObj, null, 2) + '\n'), msg || 'Update site.json', sha);
+}
+async function ghDelete(path, sha, message) {
+  const [owner, repo] = config.repo.split('/');
+  return GitHub.req(`/repos/${owner}/${repo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
+    { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ message, sha, branch: config.branch }) });
+}
+function stripHrefFromSite(site, href) {
+  if (site.nav) site.nav = site.nav.filter(it => { if (it.sub) it.sub = it.sub.filter(s => s.href !== href); return it.href !== href; });
+  if (site.footer && site.footer.columns) site.footer.columns.forEach(c => { if (c.links) c.links = c.links.filter(l => l.href !== href); });
+}
+function renameHrefInSite(site, from, to) {
+  const fix = o => { if (o && o.href === from) o.href = to; };
+  (site.nav || []).forEach(it => { fix(it); (it.sub || []).forEach(fix); });
+  if (site.footer && site.footer.columns) site.footer.columns.forEach(c => (c.links || []).forEach(fix));
+  if (site.cta) fix(site.cta);
+}
+async function deletePageFlow(path, site) {
+  stripHrefFromSite(site, path);
+  await commitSiteJson(site, 'Menu: verwijder verwijzingen naar ' + path);
+  const f = await GitHub.getFile(path);
+  await ghDelete(path, f.sha, 'Verwijder pagina ' + path);
+  await loadTree();
+  await bakePagesCore('Herbak na verwijderen ' + path);
+}
+async function renamePageFlow(oldPath, newSlug, site) {
+  const newPath = newSlug + '.html';
+  if (newPath === oldPath) return newPath;
+  if (state.tree.some(t => t.path === newPath)) throw new Error('"' + newPath + '" bestaat al.');
+  renameHrefInSite(site, oldPath, newPath);
+  await commitSiteJson(site, 'Menu: hernoem ' + oldPath + ' → ' + newPath);
+  const f = await GitHub.getFile(oldPath);
+  await GitHub.putFile(newPath, f.content.replace(/\s/g, ''), 'Hernoem: ' + oldPath + ' → ' + newPath);
+  await ghDelete(oldPath, f.sha, 'Verwijder oud pad ' + oldPath);
+  await loadTree();
+  await bakePagesCore('Herbak na hernoemen', { from: oldPath, to: newPath });
+  return newPath;
+}
+
+function openMenuPages() {
+  if (!isConfigured()) { toast('Verbind eerst met GitHub.', 'error'); return; }
+  if (!config.themeBase) { toast('Deze site heeft geen themeBase (cms.config.json).', 'error'); return; }
+  const ov = el('div', { class:'menupages-ov', style:'position:fixed;inset:0;background:rgba(20,20,30,.5);display:flex;align-items:center;justify-content:center;z-index:9999;' });
+  const box = el('div', { style:'background:#fff;border-radius:14px;max-width:640px;width:94%;max-height:90vh;overflow:auto;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3);font-size:14px;' });
+  box.append(el('h2', { style:'margin:0 0 10px;color:#3E2E6D;font-size:18px;' }, '🗂 Menu & pagina\'s'), el('div', { class:'loading-block' }, el('div', { class:'spinner dark' }), 'Laden…'));
+  ov.append(box); document.body.append(ov);
+  const inp = (v, ph) => { const i = el('input', { type:'text', value:v||'', placeholder:ph||'', style:'padding:6px 8px;border:1px solid #ddd;border-radius:7px;font-size:13px;' }); return i; };
+
+  loadSiteJsonForBake().then(site => {
+    site.nav = site.nav || [];
+    const render = () => {
+      box.innerHTML = '';
+      box.append(el('h2', { style:'margin:0 0 4px;color:#3E2E6D;font-size:18px;' }, '🗂 Menu & pagina\'s'));
+
+      // ── MENU ──
+      box.append(el('div', { style:'font-weight:700;font-size:13px;color:#3E2E6D;margin:8px 0 2px;' }, 'Menu'));
+      box.append(el('div', { style:'font-size:12px;color:#888;margin-bottom:6px;' }, 'Hernoem, versleep (▲▼) of verwijder menu-items. Klik ＋/▾ voor een submenu.'));
+      const navWrap = el('div', {});
+      const drawNav = () => {
+        navWrap.innerHTML = '';
+        site.nav.forEach((it, idx) => {
+          const li = inp(it.label, 'Label'); li.style.flex = '1'; li.addEventListener('input', () => it.label = li.value);
+          const hr = inp(it.href, 'pagina.html'); hr.style.cssText += 'flex:0 0 150px;'; hr.addEventListener('input', () => it.href = hr.value);
+          const row = el('div', { style:'display:flex;gap:6px;align-items:center;margin:4px 0;' }, li, hr,
+            el('button', { class:'mini', title:'Submenu', onclick:()=>{ if(it.sub) delete it.sub; else it.sub=[]; drawNav(); } }, it.sub ? '▾' : '＋'),
+            el('button', { class:'mini', title:'Omhoog', onclick:()=>{ if(idx>0){ site.nav.splice(idx-1,0,site.nav.splice(idx,1)[0]); drawNav(); } } }, '▲'),
+            el('button', { class:'mini', title:'Omlaag', onclick:()=>{ if(idx<site.nav.length-1){ site.nav.splice(idx+1,0,site.nav.splice(idx,1)[0]); drawNav(); } } }, '▼'),
+            el('button', { class:'mini', title:'Verwijderen', onclick:()=>{ site.nav.splice(idx,1); drawNav(); } }, '✕'));
+          navWrap.append(row);
+          if (it.sub) {
+            const sub = el('div', { style:'margin:2px 0 2px 20px;padding-left:8px;border-left:2px solid #eee;' });
+            it.sub.forEach((s, j) => {
+              const sl = inp(s.label, 'Sub-label'); sl.style.flex = '1'; sl.addEventListener('input', () => s.label = sl.value);
+              const sh = inp(s.href, 'pagina.html'); sh.style.cssText += 'flex:0 0 140px;'; sh.addEventListener('input', () => s.href = sh.value);
+              sub.append(el('div', { style:'display:flex;gap:6px;align-items:center;margin:3px 0;' }, sl, sh,
+                el('button', { class:'mini', title:'Verwijderen', onclick:()=>{ it.sub.splice(j,1); drawNav(); } }, '✕')));
+            });
+            sub.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;margin-top:2px;', onclick:()=>{ it.sub.push({label:'',href:''}); drawNav(); } }, '+ submenu-item'));
+            navWrap.append(sub);
+          }
+        });
+        navWrap.append(el('button', { class:'btn btn-ghost', style:'font-size:12px;margin-top:4px;', onclick:()=>{ site.nav.push({label:'',href:''}); drawNav(); } }, '+ menu-item'));
+      };
+      drawNav();
+      box.append(navWrap);
+      const btnSaveMenu = el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;margin-top:8px;' }, '💾 Menu opslaan & publiceren');
+      btnSaveMenu.onclick = async () => {
+        if (!confirm('Menu opslaan en alle pagina\'s herbakken?')) return;
+        btnSaveMenu.disabled = true; btnSaveMenu.textContent = 'Bezig…';
+        try { toast('Menu opslaan…','info'); await commitSiteJson(site, 'Menu bijgewerkt'); await bakePagesCore('Herbak na menu-wijziging'); toast('Menu opgeslagen & gepubliceerd.', 'success', 5000); }
+        catch (e) { toast('Mislukt: ' + e.message, 'error', 9000); }
+        finally { btnSaveMenu.disabled = false; btnSaveMenu.textContent = '💾 Menu opslaan & publiceren'; }
+      };
+      box.append(btnSaveMenu);
+
+      // ── PAGINA'S ──
+      box.append(el('div', { style:'font-weight:700;font-size:13px;color:#3E2E6D;margin:16px 0 2px;' }, 'Pagina\'s'));
+      box.append(el('div', { style:'font-size:12px;color:#888;margin-bottom:6px;' }, 'Hernoem of verwijder pagina\'s. Verwijzingen in het menu en tussen pagina\'s worden automatisch bijgewerkt.'));
+      const htmlPages = state.tree.filter(t => t.type === 'blob' && /\.html$/i.test(t.path)).map(t => t.path).sort();
+      htmlPages.forEach(p => {
+        const slug = p.replace(/\.html$/i, '');
+        const slugIn = inp(slug, ''); slugIn.style.flex = '1';
+        const btnRen = el('button', { class:'btn btn-ghost', style:'font-size:12px;', onclick: async () => {
+          const ns = slugPage(slugIn.value); if (!ns) { toast('Ongeldige naam.', 'error'); return; }
+          if (ns + '.html' === p) { toast('Geen wijziging.', 'info'); return; }
+          if (!confirm('Pagina "' + p + '" hernoemen naar "' + ns + '.html"?\nMenu- en interne links worden bijgewerkt en alle pagina\'s herbakken.')) return;
+          btnRen.disabled = true; btnRen.textContent = '…';
+          try { const np = await renamePageFlow(p, ns, site); toast('Hernoemd naar ' + np, 'success', 5000); ov.remove(); openMenuPages(); }
+          catch (e) { toast('Mislukt: ' + e.message, 'error', 9000); btnRen.disabled = false; btnRen.textContent = '✎ Hernoem'; }
+        } }, '✎ Hernoem');
+        const btnDel = el('button', { class:'mini', title:'Pagina verwijderen', onclick: async () => {
+          if (!confirm('Pagina "' + p + '" definitief verwijderen? Verwijzingen worden uit het menu gehaald en alles herbakken.')) return;
+          try { toast('Verwijderen…','info'); await deletePageFlow(p, site); toast('Verwijderd: ' + p, 'success', 5000); ov.remove(); openMenuPages(); }
+          catch (e) { toast('Mislukt: ' + e.message, 'error', 9000); }
+        } }, '🗑');
+        box.append(el('div', { style:'display:flex;gap:6px;align-items:center;margin:4px 0;' },
+          el('code', { style:'flex:0 0 auto;font-size:11px;color:#999;' }, '/'), slugIn,
+          el('span', { style:'font-size:11px;color:#999;' }, '.html'), btnRen, btnDel));
+      });
+
+      box.append(el('div', { style:'display:flex;justify-content:flex-end;margin-top:16px;' },
+        el('button', { style:'background:#3E2E6D;color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;', onclick:()=>ov.remove() }, 'Sluiten')));
+    };
+    render();
+  }).catch(e => { box.innerHTML = ''; box.append(el('div', { style:'color:#c0392b;' }, 'Kon site.json niet laden: ' + e.message)); });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    14. EVENT WIRING
    ═══════════════════════════════════════════════════════════════════════════ */
 // Topbar
@@ -2759,6 +2891,7 @@ $('#btnSettings').onclick = () => openSettings();
 $('#btnImages').onclick = () => openImagesManager();
 $('#btnNewSite').onclick = () => openNewSite();
 $('#btnNewPage').onclick = () => openNewPage();
+$('#btnMenuPages').onclick = () => openMenuPages();
 $('#btnSections').onclick = () => openSections();
 $('#btnLinks').onclick = () => openLinks();
 $('#btnBake').onclick = () => bakeAllPages();
@@ -2782,10 +2915,7 @@ $$('.view-tab').forEach(t => t.onclick = () => setView(t.dataset.view));
 $('#btnEditMode').onclick = () => {
   state.editMode = !state.editMode;
   $('#btnEditMode').classList.toggle('active', state.editMode);
-  // Klik-bewerken werkt volledig in de preview (klik een tekst → bewerk via de
-  // selectie-chip/AI in de zijbalk). De code-editor is daarvoor niet nodig, dus
-  // schakelen we naar preview-only i.p.v. de editor ernaast te tonen.
-  if (state.editMode) setView('preview');
+  if (state.editMode && state.view === 'edit') setView('split');
   if (!state.editMode) clearSelection();
   updatePreview();
   toast(state.editMode
